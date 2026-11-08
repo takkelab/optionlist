@@ -1,4 +1,6 @@
 import { ExpressApp } from "./app";
+import { AccountController } from "./controllers/AccountController";
+import { AccountInput } from "./controllers/AccountInput";
 import { AchievementPhotoController } from "./controllers/AchievementPhotoController";
 import { AchievementsController } from "./controllers/AchievementsController";
 import { EventInput } from "./controllers/EventInput";
@@ -29,8 +31,10 @@ import { OptionRowMapper } from "./repositories/OptionRowMapper";
 import { SuggestionRepository } from "./repositories/SuggestionRepository";
 import { SuggestionRowMapper } from "./repositories/SuggestionRowMapper";
 import { UserRepository } from "./repositories/UserRepository";
+import { AccountHasher } from "./services/AccountHasher";
 import { AccountService } from "./services/AccountService";
 import type { SessionKeySource } from "./services/AccountService";
+import { AccountSettingsService } from "./services/AccountSettingsService";
 import { AchievementPhotoService } from "./services/AchievementPhotoService";
 import { AchievementService } from "./services/AchievementService";
 import type { Clock } from "./services/Clock";
@@ -39,6 +43,7 @@ import { HealthService } from "./services/HealthService";
 import { OptionService } from "./services/OptionService";
 import { PhotoCleanup } from "./services/PhotoCleanup";
 import { PhotoFormat } from "./services/PhotoFormat";
+import { CryptoRandomIndex, RecoveryCodes } from "./services/RecoveryCodes";
 import { GapSortOrderPlanner } from "./services/SortOrderPlanner";
 import { SuggestionService } from "./services/SuggestionService";
 
@@ -124,6 +129,19 @@ export class AppAssembly implements AppFactory {
       new AchievementsController(new OptionInput(ids), new AchievementService(achievementStore, this.#clock), user),
       new AchievementPhotoController(ids, photos, this.#photoFiles.directory(), user),
       new EventsController(new EventInput(), new EventService(new EventRepository(this.#db), this.#clock)),
+      new AccountController({ input: new AccountInput(), accounts: this.#accountSettings(cleanup), user, cookie }),
     ];
+  }
+
+  // 設定のシートの操作（api.md §6）。復旧コードで移る・すべて消すのは数える SQL なので、セッションの DB ではなく db で流す
+  #accountSettings(photos: PhotoCleanup): AccountSettingsService {
+    return new AccountSettingsService({
+      accounts: new AccountRepository(this.#db),
+      users: new UserRepository(this.#db),
+      photos,
+      keys: this.#keys,
+      codes: new RecoveryCodes(new CryptoRandomIndex()),
+      hasher: new AccountHasher(this.#ipHashSecret),
+    });
   }
 }

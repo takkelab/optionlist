@@ -1,6 +1,14 @@
 import type { SqlRunner } from "./ShortLivedConnection";
 
-export type Snapshot = { columns: string[]; indexes: string[]; foreignKeys: string[]; checks: string[]; rowCounts: string[] };
+export type Snapshot = {
+  columns: string[];
+  indexes: string[];
+  foreignKeys: string[];
+  checks: string[];
+  // 関数（認証の関数など）。関数だけを足すマイグレーションでも、up と down の差が見えるように
+  functions: string[];
+  rowCounts: string[];
+};
 
 export interface SchemaReader {
   take(): Promise<Snapshot>;
@@ -10,6 +18,7 @@ type ColumnRow = { tableName: string; columnName: string; columnType: string; nu
 type IndexRow = { tableName: string; indexName: string; unique: string; columns: string };
 type ForeignKeyRow = { tableName: string; definition: string; constraintName: string };
 type TableRow = { tableName: string };
+type FunctionRow = { name: string; args: string; result: string; owner: string; definer: string };
 type CountRow = { n: number };
 
 // dbmate の管理表。rollback しても残るので比べない
@@ -29,8 +38,21 @@ export class SchemaSnapshot implements SchemaReader {
       indexes: await this.#indexes(),
       foreignKeys: await this.#constraints("f"),
       checks: await this.#constraints("c"),
+      functions: await this.#functions(),
       rowCounts: await this.#rowCounts(),
     };
+  }
+
+  // 名前・引数・戻り値・持ち主・SECURITY DEFINER か
+  async #functions(): Promise<string[]> {
+    const rows = await this.#sql.rows<FunctionRow>(
+      `SELECT p.proname AS name, pg_get_function_identity_arguments(p.oid) AS args, pg_get_function_result(p.oid) AS result,
+              pg_get_userbyid(p.proowner) AS owner, CASE WHEN p.prosecdef THEN ' SECURITY DEFINER' ELSE '' END AS definer
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'`,
+    );
+    return rows.map((r) => `${r.name}(${r.args}) RETURNS ${r.result} OWNER ${r.owner}${r.definer}`).sort();
   }
 
   async #columns(): Promise<string[]> {

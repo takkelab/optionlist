@@ -22,7 +22,7 @@ const all = new DbmateCli(url.toString(), MIGRATIONS_DIR);
 const stepDir = mkdtempSync(join(tmpdir(), "optionlist-migrations-"));
 const stepwise = new DbmateCli(url.toString(), stepDir);
 
-const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], rowCounts: [] };
+const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], functions: [], rowCounts: [] };
 
 afterAll(async () => {
   await all.drop();
@@ -166,6 +166,16 @@ describe("schema after all migrations", () => {
       "options.chk_options_status CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text])))",
       "suggestions.chk_suggestions_season CHECK ((((season_from IS NULL) AND (season_to IS NULL)) OR ((season_from IS NOT NULL) AND (season_to IS NOT NULL) AND ((season_from >= 1) AND (season_from <= 12)) AND ((season_to >= 1) AND (season_to <= 12)))))",
       "suggestions.chk_suggestions_size CHECK ((size = ANY (ARRAY['hour'::text, 'half_day'::text, 'day'::text, 'overnight'::text])))",
+    ]);
+  });
+
+  // 認証の関数（data.md §4）。持ち主は ol_definer で、SECURITY DEFINER
+  it("has the auth functions owned by ol_definer", async () => {
+    const { functions } = await snapshot.take();
+    expect(functions).toEqual([
+      "auth_create_user(p_session_hash bytea, p_ip_hash bytea) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer) OWNER ol_definer SECURITY DEFINER",
+      "auth_find_user(p_session_hash bytea) RETURNS TABLE(user_id bigint, last_seen_at timestamp with time zone) OWNER ol_definer SECURITY DEFINER",
+      "auth_restore(p_code_hash bytea, p_new_session_hash bytea, p_ip_hash bytea, p_current_user_id bigint, p_replace boolean) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer, local_item_count integer) OWNER ol_definer SECURITY DEFINER",
     ]);
   });
 

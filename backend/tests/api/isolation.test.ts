@@ -26,6 +26,8 @@ type Case =
   | { kind: "order" }
   // A が追加した提案を B も追加できる（UNIQUE は人ごと）
   | { kind: "create" }
+  // 自分のアカウントだけを扱う（/api/account）。別の人が呼んでも A のアカウント・行・写真が変わらない
+  | { kind: "own-account"; body?: object }
   | { kind: "no-user-data"; reason: string };
 
 const CASES: Record<string, Case> = {
@@ -45,6 +47,11 @@ const CASES: Record<string, Case> = {
   "GET /api/photos/:filename": { kind: "others-row", target: "photo" },
   "GET /api/suggestions": { kind: "list" },
   "GET /api/suggestions/:id": { kind: "list" },
+  "GET /api/account": { kind: "own-account" },
+  "POST /api/account/recovery-code": { kind: "own-account" },
+  // A のコードを知らない人は、形の合うコードを入れても 404
+  "POST /api/account/restore": { kind: "own-account", body: { code: "2345-6789-ABCD-EFGH", replace: true } },
+  "DELETE /api/account": { kind: "own-account" },
 };
 
 const recorder = new RouteRecorder();
@@ -53,6 +60,10 @@ const registered = recorder.routes();
 const othersRowRoutes = registered.filter((route) => {
   const found = CASES[route];
   return found !== undefined && found.kind === "others-row";
+});
+const ownAccountRoutes = registered.filter((route) => {
+  const found = CASES[route];
+  return found !== undefined && found.kind === "own-account";
 });
 
 const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
@@ -165,5 +176,42 @@ describe("another person's rows", () => {
   it("lets B add the suggestion that A has added", async () => {
     const { status } = await new OptionsApiClient(app, cookies.b).create({ title: "B も提案から追加", suggestionId: SUGGESTION });
     expect(status).toBe(201);
+  });
+});
+
+describe("A's account", () => {
+  // A の users の行（鍵・復旧コードのハッシュ）と項目・達成を JSON にして、前後で比べる（ol_migrator で読む）
+  const snapshot = async (): Promise<unknown> => {
+    const { rows } = await pool.query(
+      `SELECT u.session_hash, u.recovery_code_hash,
+              (SELECT json_agg(o ORDER BY o.id) FROM options o WHERE o.user_id = u.id) AS options,
+              (SELECT json_agg(x ORDER BY x.id) FROM achievements x WHERE x.user_id = u.id) AS achievements
+         FROM users u WHERE u.id = $1`,
+      [aUser.id],
+    );
+    return rows;
+  };
+
+  beforeAll(async () => {
+    const { status } = await new SessionAgent(app, cookies.a).send((r) => r.post("/api/account/recovery-code"));
+    expect(status).toBe(201);
+  });
+
+  // 呼ぶのはその回だけの人 C（DELETE で消えても、ほかのケースの B に響かない）
+  it.each(ownAccountRoutes)("%s by another person does not touch A", async (route) => {
+    const found = CASES[route];
+    if (found?.kind !== "own-account") throw new Error(`${route} のケースがない`);
+    const [method = "", path = ""] = route.split(" ");
+    const c = await users.create();
+    await new OptionsApiClient(app, c.cookie).added("C の項目");
+    const before = await snapshot();
+    const res = await new SessionAgent(app, c.cookie).send((r) => {
+      const pending = method === "GET" ? r.get(path) : method === "POST" ? r.post(path) : r.delete(path);
+      return found.body === undefined ? pending : pending.send(found.body);
+    });
+    expect([200, 201, 204, 404]).toContain(res.status);
+    if (method === "GET") expect(res.body).toMatchObject({ hasAccount: true, hasRecoveryCode: false });
+    expect(await snapshot()).toEqual(before);
+    expect(existsSync(join(uploadDir, aRows.photo))).toBe(true);
   });
 });

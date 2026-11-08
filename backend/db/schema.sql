@@ -56,6 +56,48 @@ CREATE FUNCTION public.auth_find_user(p_session_hash bytea) RETURNS TABLE(user_i
 $$;
 
 
+--
+-- Name: auth_restore(bytea, bytea, bytea, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.auth_restore(p_code_hash bytea, p_new_session_hash bytea, p_ip_hash bytea, p_current_user_id bigint, p_replace boolean) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer, local_item_count integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_count int;
+  v_oldest timestamptz;
+  v_id bigint;
+  v_items int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended('auth_restore:' || encode(p_ip_hash, 'hex'), 0));
+  SELECT count(*), min(a.occurred_at) INTO v_count, v_oldest
+    FROM public.auth_attempts a
+   WHERE a.kind = 'restore' AND a.ip_hash = p_ip_hash AND a.occurred_at > now() - interval '1 hour';
+  IF v_count >= 10 THEN
+    RETURN QUERY SELECT 'rate_limited'::text, NULL::bigint,
+      greatest(1, ceil(extract(epoch FROM (v_oldest + interval '1 hour' - now())))::int), NULL::int;
+    RETURN;
+  END IF;
+  INSERT INTO public.auth_attempts (kind, ip_hash, occurred_at) VALUES ('restore', p_ip_hash, now());
+  SELECT u.id INTO v_id FROM public.users u WHERE u.recovery_code_hash = p_code_hash FOR UPDATE;
+  IF v_id IS NULL THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::int, NULL::int;
+    RETURN;
+  END IF;
+  IF p_current_user_id IS NOT NULL AND p_current_user_id <> v_id AND NOT p_replace THEN
+    SELECT count(*) INTO v_items FROM public.options o WHERE o.user_id = p_current_user_id;
+    IF v_items > 0 THEN
+      RETURN QUERY SELECT 'needs_confirm'::text, NULL::bigint, NULL::int, v_items;
+      RETURN;
+    END IF;
+  END IF;
+  UPDATE public.users SET session_hash = p_new_session_hash, recovery_code_hash = NULL WHERE id = v_id;
+  RETURN QUERY SELECT 'ok'::text, v_id, NULL::int, NULL::int;
+END
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -711,4 +753,5 @@ CREATE POLICY users_migrator ON public.users TO ol_migrator USING (true) WITH CH
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20261108000000'),
-    ('20261108120000');
+    ('20261108120000'),
+    ('20261108130000');
