@@ -1,7 +1,84 @@
 -- migrate:up
--- 提案のマスターデータ（data.md §2）。中身は AI が下書きし、ユーザーが直す（docs/decisions/0020）
--- 豆知識には年で変わる日付を書かない。どの月にも季節の提案が 5 件以上あり、どのタグも 3 件以上に付く（tests/migrations で確かめる）
-INSERT INTO themes (id, name, sort_order) VALUES
+-- 基準のマイグレーション（docs/decisions/0034・0044）。MySQL 時代の 13 本をまとめ直したもの。表の形は MySQL の最後の状態のまま、型だけ data.md §1 に合わせた
+-- 利用者の分け方（users・user_id・RLS）は R2 で足す（process.md §5）
+
+-- 提案のテーマ。sort_order は探す画面での順
+CREATE TABLE themes (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name VARCHAR(50) NOT NULL,
+  sort_order INTEGER NOT NULL
+);
+
+-- 季節は season_from 月〜season_to 月（両端を含み、12 → 2 のように年をまたいでよい）。両方 NULL なら通年
+CREATE TABLE suggestions (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  theme_id BIGINT NOT NULL CONSTRAINT fk_suggestions_theme REFERENCES themes (id),
+  title VARCHAR(200) NOT NULL,
+  hook VARCHAR(100) NOT NULL,
+  trivia VARCHAR(300) NOT NULL,
+  first_step VARCHAR(100) NOT NULL,
+  size TEXT NOT NULL CONSTRAINT chk_suggestions_size CHECK (size IN ('hour', 'half_day', 'day', 'overnight')),
+  season_from SMALLINT NULL,
+  season_to SMALLINT NULL,
+  -- 片方だけ NULL だと BETWEEN が NULL（不明）になり CHECK を通ってしまうので、IS NOT NULL を明示する
+  CONSTRAINT chk_suggestions_season CHECK (
+    (season_from IS NULL AND season_to IS NULL)
+    OR (season_from IS NOT NULL AND season_to IS NOT NULL AND season_from BETWEEN 1 AND 12 AND season_to BETWEEN 1 AND 12)
+  )
+);
+CREATE INDEX idx_suggestions_theme_id ON suggestions (theme_id);
+
+CREATE TABLE tags (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name VARCHAR(30) NOT NULL CONSTRAINT uq_tags_name UNIQUE
+);
+
+-- タグから提案を引くため tag_id にもインデックスを張る
+CREATE TABLE suggestion_tags (
+  suggestion_id BIGINT NOT NULL CONSTRAINT fk_suggestion_tags_suggestion REFERENCES suggestions (id),
+  tag_id BIGINT NOT NULL CONSTRAINT fk_suggestion_tags_tag REFERENCES tags (id),
+  PRIMARY KEY (suggestion_id, tag_id)
+);
+CREATE INDEX idx_suggestion_tags_tag_id ON suggestion_tags (tag_id);
+
+-- やりたいこと。suggestion_id が NULL なら手で追加したもの。同じ提案は二重に追加できない
+CREATE TABLE options (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CONSTRAINT chk_options_status CHECK (status IN ('pending', 'completed')),
+  suggestion_id BIGINT NULL CONSTRAINT fk_options_suggestion REFERENCES suggestions (id),
+  sort_order INTEGER NOT NULL,
+  planned_on DATE NULL,
+  completed_at TIMESTAMPTZ(3) NULL,
+  created_at TIMESTAMPTZ(3) NOT NULL,
+  updated_at TIMESTAMPTZ(3) NOT NULL,
+  CONSTRAINT uq_options_suggestion_id UNIQUE (suggestion_id)
+);
+CREATE INDEX idx_options_status_sort_order ON options (status, sort_order);
+
+-- 達成記録。一覧の 1 行ごとに「写真が付いた、いちばん新しい達成」を読むので、行を読みに行かずに答えられるよう写真の列もインデックスに含める（metrics.md §4）
+CREATE TABLE achievements (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  option_id BIGINT NOT NULL CONSTRAINT fk_achievements_option REFERENCES options (id) ON DELETE CASCADE,
+  achieved_at TIMESTAMPTZ(3) NOT NULL,
+  photo_filename VARCHAR(100) NULL
+);
+CREATE INDEX idx_achievements_achieved_at ON achievements (achieved_at);
+CREATE INDEX idx_achievements_option_id_achieved_at_photo ON achievements (option_id, achieved_at, photo_filename);
+
+-- 利用イベント（screens.md §8）。occurred_at は frontend で起きた時刻
+CREATE TABLE events (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  type VARCHAR(50) NOT NULL,
+  payload JSONB NOT NULL,
+  occurred_at TIMESTAMPTZ(3) NOT NULL,
+  received_at TIMESTAMPTZ(3) NOT NULL
+);
+CREATE INDEX idx_events_occurred_at ON events (occurred_at);
+
+-- 提案のマスターデータ（data.md §2）。MySQL 時代の最後の状態をそのまま写す。ID は変えない（docs/decisions/0021・0044）
+-- 中身は tests/migrations/fixtures/suggestions-mysql-final.json と一致することを確かめる
+INSERT INTO themes (id, name, sort_order) OVERRIDING SYSTEM VALUE VALUES
   (1, '夜空と天気', 1),
   (2, '花と生き物', 2),
   (3, '季節の行事', 3),
@@ -13,7 +90,7 @@ INSERT INTO themes (id, name, sort_order) VALUES
   (9, '音と言葉', 9),
   (10, 'ちょっとの冒険', 10);
 
-INSERT INTO tags (id, name) VALUES
+INSERT INTO tags (id, name) OVERRIDING SYSTEM VALUE VALUES
   (1, '星'),
   (2, '夜'),
   (3, '観察'),
@@ -54,7 +131,7 @@ INSERT INTO tags (id, name) VALUES
   (38, '電車'),
   (39, '食べ歩き');
 
-INSERT INTO suggestions (id, theme_id, title, hook, trivia, first_step, size, season_from, season_to) VALUES
+INSERT INTO suggestions (id, theme_id, title, hook, trivia, first_step, size, season_from, season_to) OVERRIDING SYSTEM VALUE VALUES
   (1, 1, 'ふたご座流星群を見る', '流れ星を、1 時間に数十個見られる夜がある',
     '三大流星群のひとつで、極大は毎年 12 月 14 日ごろ。条件がよければ 1 時間に数十個流れる。もとになる天体は彗星ではなく、小惑星ファエトン。',
     '今年の極大の日時と、月の明るさを調べる', 'hour', 12, 12),
@@ -372,10 +449,16 @@ INSERT INTO suggestion_tags (suggestion_id, tag_id) VALUES
   (92, 38), (92, 39), (92, 4), (93, 9), (93, 39), (93, 17), (94, 4), (94, 6), (94, 34), (95, 13),
   (95, 31);
 
+-- ID を書いて入れたので、identity の次の値を最大の ID の次に合わせる（次に提案を足すマイグレーションが ID を書かなくてもぶつからない）
+SELECT setval(pg_get_serial_sequence('themes', 'id'), (SELECT MAX(id) FROM themes));
+SELECT setval(pg_get_serial_sequence('tags', 'id'), (SELECT MAX(id) FROM tags));
+SELECT setval(pg_get_serial_sequence('suggestions', 'id'), (SELECT MAX(id) FROM suggestions));
+
 -- migrate:down
--- この提案から追加した options は、手で追加したものとして残す（up の入れ替えと同じ。data.md §2）
-UPDATE options SET suggestion_id = NULL WHERE suggestion_id IS NOT NULL;
-DELETE FROM suggestion_tags;
-DELETE FROM tags;
-DELETE FROM suggestions;
-DELETE FROM themes;
+DROP TABLE events;
+DROP TABLE achievements;
+DROP TABLE options;
+DROP TABLE suggestion_tags;
+DROP TABLE tags;
+DROP TABLE suggestions;
+DROP TABLE themes;

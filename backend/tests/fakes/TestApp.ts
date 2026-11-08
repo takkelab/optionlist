@@ -13,7 +13,7 @@ import { OptionInput } from "../../src/controllers/OptionInput";
 import { OptionsController } from "../../src/controllers/OptionsController";
 import { PathId } from "../../src/controllers/PathId";
 import { SuggestionsController } from "../../src/controllers/SuggestionsController";
-import type { Database } from "../../src/infra/MySqlDatabase";
+import type { Database } from "../../src/infra/PgDatabase";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { ErrorHandler } from "../../src/middleware/ErrorHandler";
 import { NotFoundHandler } from "../../src/middleware/NotFoundHandler";

@@ -1,8 +1,7 @@
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { SuggestionSummary } from "../../../shared/types";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { CountingDatabase } from "../fakes/CountingDatabase";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
@@ -11,9 +10,9 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // GET /api/suggestions、GET /api/suggestions/:id（api.md §2、testing.md §2）。提案はマイグレーションで入れたマスターデータを使う
-const pool = new MySqlPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env).create();
 const data = new TestDatabase(pool);
-const db = new CountingDatabase(new MySqlDatabase(pool, new PromMetrics()));
+const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
 const app = new TestApp({ db }).build();
 const api = new SuggestionsApiClient(app);
 const options = new OptionsApiClient(app);
@@ -30,9 +29,9 @@ afterAll(async () => {
 
 describe("GET /api/suggestions", () => {
   it("returns the themes in sort order, the tags and the suggestions in id order", async () => {
-    const [themeRows] = await pool.query<RowDataPacket[]>("SELECT id, name FROM themes ORDER BY sort_order");
-    const [tagRows] = await pool.query<RowDataPacket[]>("SELECT id FROM tags ORDER BY id");
-    const [suggestionRows] = await pool.query<RowDataPacket[]>("SELECT id FROM suggestions ORDER BY id");
+    const { rows: themeRows } = await pool.query("SELECT id, name FROM themes ORDER BY sort_order");
+    const { rows: tagRows } = await pool.query("SELECT id FROM tags ORDER BY id");
+    const { rows: suggestionRows } = await pool.query("SELECT id FROM suggestions ORDER BY id");
     const { themes, tags, suggestions } = await api.catalog();
 
     expect(themes).toEqual(themeRows);
@@ -42,10 +41,10 @@ describe("GET /api/suggestions", () => {
   });
 
   it("returns each suggestion as a summary with its tag ids in id order", async () => {
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const { rows } = await pool.query(
       "SELECT id, hook, title, size, season_from, season_to, theme_id FROM suggestions WHERE id = 1",
     );
-    const [tagRows] = await pool.query<RowDataPacket[]>("SELECT tag_id FROM suggestion_tags WHERE suggestion_id = 1 ORDER BY tag_id");
+    const { rows: tagRows } = await pool.query("SELECT tag_id FROM suggestion_tags WHERE suggestion_id = 1 ORDER BY tag_id");
     const { suggestions } = await api.catalog();
     const [row] = rows;
 
@@ -88,8 +87,8 @@ describe("GET /api/suggestions", () => {
 
 describe("GET /api/suggestions/:id", () => {
   it("returns the trivia, the first step and the tags in id order", async () => {
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT trivia, first_step FROM suggestions WHERE id = 1");
-    const [tagRows] = await pool.query<RowDataPacket[]>(
+    const { rows } = await pool.query("SELECT trivia, first_step FROM suggestions WHERE id = 1");
+    const { rows: tagRows } = await pool.query(
       "SELECT t.id, t.name FROM suggestion_tags st JOIN tags t ON t.id = st.tag_id WHERE st.suggestion_id = 1 ORDER BY t.id",
     );
     const { suggestions } = await api.catalog();

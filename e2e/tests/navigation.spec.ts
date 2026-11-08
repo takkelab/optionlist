@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { OptionSeed } from '../support/OptionSeed'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
 import { WishListScreen } from '../support/WishListScreen'
 import type { SlideFrame } from '../support/WishListScreen'
 
-const data = new MySqlTestData()
+const data = new PgTestData()
 
 test.beforeEach(async () => {
   await data.reset()

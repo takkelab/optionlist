@@ -1,9 +1,8 @@
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, describe, expect, it } from "vitest";
 import { PerfDataGenerator, SeededRandom, TestDatabaseGuard } from "../../db/perf-data/PerfDataGenerator";
 import type { PerfDataCounts } from "../../db/perf-data/PerfDataGenerator";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { TestDatabase } from "../fakes/TestDatabase";
 
@@ -15,8 +14,8 @@ const COUNTS: PerfDataCounts = {
   events: 9,
 };
 
-const pool = new MySqlPoolFactory(process.env).create();
-const db = new MySqlDatabase(pool, new PromMetrics());
+const pool = new PgPoolFactory(process.env).create();
+const db = new PgDatabase(pool, new PromMetrics());
 
 afterAll(async () => {
   await new TestDatabase(pool).reset();
@@ -26,7 +25,7 @@ afterAll(async () => {
 describe("PerfDataGenerator", () => {
   it("inserts the configured number of rows", async () => {
     await new PerfDataGenerator(db, COUNTS, new SeededRandom(1), new Date()).generate();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const { rows } = await pool.query(
       `SELECT (SELECT COUNT(*) FROM options WHERE status = 'pending' AND completed_at IS NULL) AS pending,
               (SELECT COUNT(*) FROM options WHERE status = 'completed' AND completed_at IS NOT NULL) AS completed,
               (SELECT COUNT(*) FROM achievements) AS achievements,
@@ -39,7 +38,7 @@ describe("PerfDataGenerator", () => {
   it("adds 50 suggestions to the options and leaves the rest unadded", async () => {
     const counts = { ...COUNTS, pendingOptions: 60, completedOptions: 60 };
     await new PerfDataGenerator(db, counts, new SeededRandom(1), new Date()).generate();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const { rows } = await pool.query(
       `SELECT (SELECT COUNT(*) FROM options WHERE suggestion_id IS NOT NULL) AS added,
               (SELECT COUNT(*) FROM suggestions s WHERE NOT EXISTS (SELECT 1 FROM options o WHERE o.suggestion_id = s.id)) AS unadded`,
     );
@@ -49,9 +48,9 @@ describe("PerfDataGenerator", () => {
   // 送るイベントは client_error だけ（screens.md §8、docs/decisions/0031）
   it("inserts client_error events with the message and the screen", async () => {
     await new PerfDataGenerator(db, { ...COUNTS, events: 8 }, new SeededRandom(1), new Date()).generate();
-    const [types] = await pool.query<RowDataPacket[]>("SELECT DISTINCT type FROM events");
+    const { rows: types } = await pool.query("SELECT DISTINCT type FROM events");
     expect(types.map((r) => r.type)).toEqual(["client_error"]);
-    const [errors] = await pool.query<RowDataPacket[]>("SELECT payload FROM events");
+    const { rows: errors } = await pool.query("SELECT payload FROM events");
     for (const { payload } of errors) expect(payload).toEqual({ message: expect.any(String), route: expect.any(String) });
     const routes = new Set(errors.map(({ payload }) => payload.route));
     expect([...routes].sort()).toEqual(["/", "/done", "/suggestions", "/suggestions/12"]);
@@ -61,7 +60,7 @@ describe("PerfDataGenerator", () => {
     const generator = new PerfDataGenerator(db, COUNTS, new SeededRandom(1), new Date());
     await generator.generate();
     await generator.generate();
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS n FROM options");
+    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM options");
     expect(rows[0]).toEqual({ n: 5 });
   });
 
@@ -80,8 +79,8 @@ describe("SeededRandom", () => {
 describe("TestDatabaseGuard", () => {
   it("allows only databases whose name ends with _test", () => {
     const guard = new TestDatabaseGuard();
-    expect(() => guard.ensureSafe("mysql://root:@localhost:3306/optionlist_test")).not.toThrow();
-    expect(() => guard.ensureSafe("mysql://root:@localhost:3306/optionlist")).toThrow("_test で終わる");
+    expect(() => guard.ensureSafe("postgres://postgres:postgres@localhost:5432/optionlist_test?sslmode=disable")).not.toThrow();
+    expect(() => guard.ensureSafe("postgres://postgres:postgres@localhost:5432/optionlist?sslmode=disable")).toThrow("_test で終わる");
     expect(() => guard.ensureSafe(undefined)).toThrow("_test で終わる");
   });
 });

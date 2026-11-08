@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { OptionSeed } from '../support/OptionSeed'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §1 のモーダルの出方と消え方（docs/decisions/0016）。持ち手の動きは option-sheet.spec.ts
-const data = new MySqlTestData()
+const data = new PgTestData()
 
 test.beforeEach(async () => {
   await data.reset()

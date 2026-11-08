@@ -27,14 +27,14 @@ describe("SuggestionsController", () => {
   });
 
   // :id が正の整数でないものは存在しない提案として 404（api.md §3）
-  it.each(["0", "-1", "1.5", "abc", "01", "4294967296", "99999999999", undefined])("answers NOT_FOUND for the id %s", async (id) => {
+  it.each(["0", "-1", "1.5", "abc", "01", "9007199254740992", "99999999999999999", undefined])("answers NOT_FOUND for the id %s", async (id) => {
     const error = await controller.detail({ id }, new FakeResponse()).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).code()).toBe("NOT_FOUND");
   });
 
-  it("accepts the largest INT UNSIGNED id and lets the service answer NOT_FOUND", async () => {
-    const error = await controller.detail({ id: "4294967295" }, new FakeResponse()).catch((e: unknown) => e);
-    expect((error as AppError).message).toBe("suggestion 4294967295 が見つからない");
+  it("accepts the largest safe integer id and lets the service answer NOT_FOUND", async () => {
+    const error = await controller.detail({ id: "9007199254740991" }, new FakeResponse()).catch((e: unknown) => e);
+    expect((error as AppError).message).toBe("suggestion 9007199254740991 が見つからない");
   });
 });

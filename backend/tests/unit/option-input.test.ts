@@ -19,11 +19,12 @@ describe("OptionInput.status", () => {
 describe("OptionInput.id", () => {
   it("parses a positive integer", () => {
     expect(input.id("42")).toBe(42);
-    expect(input.id("4294967295")).toBe(4_294_967_295);
+    expect(input.id("4294967296")).toBe(4_294_967_296);
+    expect(input.id("9007199254740991")).toBe(Number.MAX_SAFE_INTEGER);
   });
 
-  // INT UNSIGNED を超える ID は SQL に渡すと範囲外のエラー（500）になるので、ここで 404 にする
-  it.each([undefined, "0", "-1", "1.5", "abc", "01", "4294967296", "9999999999", "99999999999"])("treats %j as not found", (id) => {
+  // JS で正しく扱えない（Number.MAX_SAFE_INTEGER を超える）ID は、その行が存在しないので 404 にする
+  it.each([undefined, "0", "-1", "1.5", "abc", "01", "9007199254740992", "99999999999999999"])("treats %j as not found", (id) => {
     expect(() => input.id(id)).toThrow(AppError);
     expect(() => input.id(id)).toThrow("が見つからない");
   });
@@ -52,9 +53,9 @@ describe("OptionInput.newOption", () => {
     expect(() => input.newOption({ title: "a", suggestionId })).toThrow("suggestionId は");
   });
 
-  it("treats a suggestionId beyond INT UNSIGNED as an unknown suggestion", () => {
+  it("accepts any safe integer as suggestionId (suggestions.id is BIGINT)", () => {
     expect(input.newOption({ title: "a", suggestionId: 4_294_967_295 })).toEqual({ title: "a", suggestionId: 4_294_967_295 });
-    expect(() => input.newOption({ title: "a", suggestionId: 4_294_967_296 })).toThrow("提案が見つからない");
+    expect(input.newOption({ title: "a", suggestionId: Number.MAX_SAFE_INTEGER })).toEqual({ title: "a", suggestionId: Number.MAX_SAFE_INTEGER });
   });
 
   it.each([[undefined], [null], ["text"], [[1]]])("rejects the body %j", (body) => {

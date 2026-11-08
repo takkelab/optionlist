@@ -1,16 +1,15 @@
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/options/:id/achievements（api.md §2、testing.md §2）
-const pool = new MySqlPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env).create();
 const data = new TestDatabase(pool);
-const api = new OptionsApiClient(new TestApp({ db: new MySqlDatabase(pool, new PromMetrics()) }).build());
+const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 beforeEach(async () => {
@@ -45,7 +44,7 @@ describe("POST /api/options/:id/achievements", () => {
 
   it.each(["999", "abc", "0"])("returns 404 for the option %s", async (id) => {
     expect(await api.achieve(id)).toMatchObject({ status: 404, body: { error: { code: "NOT_FOUND" } } });
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS n FROM achievements");
+    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM achievements");
     expect(rows).toEqual([{ n: 0 }]);
   });
 });

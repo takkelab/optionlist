@@ -1,6 +1,6 @@
 import type { OptionStatus, SuggestionSize, SuggestionSummary } from "../../../shared/types";
 
-// 一覧の行に出す列（列は snake_case）。tag_ids は GROUP_CONCAT で「1,2,3」の形にまとめて読む（タグがなければ null）
+// 一覧の行に出す列（列は snake_case）。tag_ids は string_agg で「1,2,3」の形にまとめて読む（タグがなければ null）
 export type SuggestionSummaryRow = {
   id: number;
   hook: string;

@@ -60,7 +60,7 @@
 | 画像のアップロード（1MB）の応答時間 p95 | 300ms 以内（sharp で作り直す時間を含む。R5 で測り直す。docs/decisions/0037） | 20 回呼んで計測 | CI 失敗 |
 | SQL 1 本あたりの実行時間 p95 | 10ms 以内 | pg のラッパーで計測 | CI 失敗 |
 | 1 リクエストあたりの SQL の本数 | 一覧・詳細は 3 本以内 | 同上（N+1 を防ぐ）。トランザクションの `BEGIN`・`COMMIT`、`set_config`（RLS。data.md §4）、セッションの `auth_find_user` と 1 日 1 回の `last_seen_at` の更新（api.md §6）は数えない | CI 失敗 |
-| 主要クエリのフルテーブルスキャン | 0 件 | `EXPLAIN` の `Seq Scan` を検出（`app.user_id` を測る人にして流す）。マスターデータの表（themes・tags・suggestions・suggestion_tags。提案の一覧の API が全部読む）は数えない（docs/decisions/0021） | CI 失敗 |
+| 主要クエリのフルテーブルスキャン | 0 件 | `SET LOCAL enable_seqscan = off` の中で `EXPLAIN (FORMAT JSON)` の `Seq Scan` を検出する（索引で読めないものだけを数える。docs/decisions/0047。`app.user_id` を測る人にして流す）。マスターデータの表（themes・tags・suggestions・suggestion_tags。提案の一覧の API が全部読む）は数えない（docs/decisions/0021） | CI 失敗 |
 | 連続 1,000 リクエスト後のヒープ増加 | 10MB 以内（GC 後） | `--expose-gc` で前後の `heapUsed` を比較 | CI 失敗 |
 | 連続 1,000 リクエスト中の RSS 最大値 | 200MB 以内 | `process.memoryUsage()` | CI 失敗 |
 

@@ -1,4 +1,4 @@
-import type { Database } from "../../src/infra/MySqlDatabase";
+import type { Database } from "../../src/infra/PgDatabase";
 
 // SQL 文ごとに、最初の params（EXPLAIN 用）と実行時間を残す
 export type RecordedQuery = { sql: string; params: unknown[]; durationsMs: number[] };

@@ -3,16 +3,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { parseEnv } from "node:util";
-import { createPool } from "mysql2/promise";
-import type { ResultSetHeader } from "mysql2/promise";
-import { MySqlUsageSource } from "../lib/mysql-usage-source.ts";
+import pg from "pg";
+import { PgUsageSource } from "../lib/pg-usage-source.ts";
 
 // metrics:usage の SQL を、テスト用 DB（backend/.env.test。CI では test:scripts の前にマイグレーションする）で確かめる
 const ENV_FILE = resolve(import.meta.dirname, "../../backend/.env.test");
 const { DATABASE_URL: url } = parseEnv(readFileSync(ENV_FILE, "utf8"));
 if (url === undefined) throw new Error(`${ENV_FILE} に DATABASE_URL がない`);
-const pool = createPool({ uri: url, timezone: "Z" });
-const source = new MySqlUsageSource(pool);
+const pool = new pg.Pool({ connectionString: url, options: "-c TimeZone=UTC" });
+const source = new PgUsageSource(pool);
 
 // 期間は [FROM, TO)。境界ちょうどの行と、1ms 外の行を入れる
 const FROM = new Date("2026-11-01T00:00:00.000Z");
@@ -22,21 +21,21 @@ const before1ms = (date: Date) => new Date(date.getTime() - 1);
 // option を入れて id を返す
 const addOption = async (createdAt: Date, extra: { suggestionId?: number; completed?: boolean } = {}): Promise<number> => {
   const status = extra.completed === true ? "completed" : "pending";
-  const [result] = await pool.query<ResultSetHeader>(
-    "INSERT INTO options (title, status, suggestion_id, sort_order, completed_at, created_at, updated_at) VALUES ('x', ?, ?, 0, ?, ?, ?)",
-    [status, extra.suggestionId ?? null, extra.completed === true ? createdAt : null, createdAt, createdAt],
+  const { rows } = await pool.query<{ id: string }>(
+    "INSERT INTO options (title, status, suggestion_id, sort_order, completed_at, created_at, updated_at) VALUES ('x', $1, $2, 0, $3, $4, $4) RETURNING id",
+    [status, extra.suggestionId ?? null, extra.completed === true ? createdAt : null, createdAt],
   );
-  return result.insertId;
+  return Number(rows[0]?.id);
 };
-const achieve = (optionId: number, at: Date) => pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES (?, ?)", [optionId, at]);
+const achieve = (optionId: number, at: Date) => pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES ($1, $2)", [optionId, at]);
 const addEvent = (type: string, message: string, at: Date) =>
-  pool.query("INSERT INTO events (type, payload, occurred_at, received_at) VALUES (?, ?, ?, ?)", [type, JSON.stringify({ message, route: "/" }), at, at]);
+  pool.query("INSERT INTO events (type, payload, occurred_at, received_at) VALUES ($1, $2, $3, $3)", [type, JSON.stringify({ message, route: "/" }), at]);
 
 const clear = async () => {
-  for (const table of ["achievements", "events", "options"]) await pool.query("DELETE FROM ??", [table]);
+  await pool.query("TRUNCATE TABLE achievements, events, options RESTART IDENTITY");
 };
 
-describe("MySqlUsageSource", () => {
+describe("PgUsageSource", () => {
   before(clear);
   beforeEach(clear);
   after(async () => {

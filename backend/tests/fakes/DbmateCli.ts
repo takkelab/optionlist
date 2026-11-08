@@ -6,6 +6,8 @@ export interface Migrator {
   up(): Promise<void>;
   rollback(): Promise<void>;
   drop(): Promise<void>;
+  // 空の DB を作る（すでにあれば何もしない）
+  create(): Promise<void>;
 }
 
 const execFileAsync = promisify(execFile);
@@ -26,6 +28,10 @@ export class DbmateCli implements Migrator {
 
   async rollback(): Promise<void> {
     await this.#run("rollback");
+  }
+
+  async create(): Promise<void> {
+    await this.#run("create");
   }
 
   async drop(): Promise<void> {

@@ -1,7 +1,7 @@
 import type { Achievement, Option, OptionStatus } from "../../../shared/types";
 
-// SELECT の行（列は snake_case）。日時は mysql2 が Date で返す（timezone: "Z" なので UTC）
-// 予定日（DATE）は Date にするとタイムゾーンでずれうるので、SQL で YYYY-MM-DD の文字列にして読む
+// SELECT の行（列は snake_case）。日時（timestamptz）は pg が Date で返す
+// 予定日（DATE）は Date にするとタイムゾーンでずれうるので、pg が YYYY-MM-DD の文字列のまま返すようにしている（infra/PgPoolFactory.ts）
 export type OptionRow = {
   id: number;
   title: string;

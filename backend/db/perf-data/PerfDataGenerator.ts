@@ -1,4 +1,4 @@
-import type { Database } from "../../src/infra/MySqlDatabase";
+import type { Database } from "../../src/infra/PgDatabase";
 
 export type PerfDataCounts = {
   pendingOptions: number;
@@ -44,7 +44,7 @@ export interface TargetGuard {
 // 生成の前にデータを消すので、名前が _test で終わる DB にしか流さない（開発用 DB の実データを守る）
 export class TestDatabaseGuard implements TargetGuard {
   ensureSafe(databaseUrl: string | undefined): void {
-    const { pathname } = new URL(databaseUrl === undefined || databaseUrl === "" ? "mysql://localhost/" : databaseUrl);
+    const { pathname } = new URL(databaseUrl === undefined || databaseUrl === "" ? "postgres://localhost/" : databaseUrl);
     const name = pathname.slice(1);
     if (!name.endsWith("_test")) {
       throw new Error(`性能用データは名前が _test で終わる DB にだけ入れる（DATABASE_URL の DB 名: "${name}"）`);
@@ -79,10 +79,9 @@ export class PerfDataGenerator implements DataGenerator {
     this.#now = now;
   }
 
+  // ID を 1 から振り直すので、options は入れた順に 1, 2, … になる（achievements の option_id はそれを使う）
   async generate(): Promise<void> {
-    for (const table of ["achievements", "events", "options"]) {
-      await this.#db.query("DELETE FROM ??", [table]);
-    }
+    await this.#db.query("TRUNCATE TABLE achievements, events, options RESTART IDENTITY");
     await this.#insertOptions();
     await this.#insertAchievements();
     await this.#insertEvents();
@@ -103,9 +102,9 @@ export class PerfDataGenerator implements DataGenerator {
       // 半分に予定日を入れる（日付だけ）
       const plannedOn = id % 2 === 0 ? this.#pastDate().toISOString().slice(0, 10) : null;
       const updatedAt = completedAt ?? createdAt;
-      rows.push([id, `性能テスト用 ${id}`, status, suggestionId, id, plannedOn, completedAt, createdAt, updatedAt]);
+      rows.push([`性能テスト用 ${id}`, status, suggestionId, id, plannedOn, completedAt, createdAt, updatedAt]);
     }
-    const columns = ["id", "title", "status", "suggestion_id", "sort_order", "planned_on", "completed_at", "created_at", "updated_at"];
+    const columns = ["title", "status", "suggestion_id", "sort_order", "planned_on", "completed_at", "created_at", "updated_at"];
     await this.#insert("options", columns, rows);
   }
 
@@ -129,9 +128,13 @@ export class PerfDataGenerator implements DataGenerator {
     await this.#insert("events", ["type", "payload", "occurred_at", "received_at"], rows);
   }
 
+  // 表と列の名前はこのクラスの決まった値（入力ではない）。値は ($1, $2, …) のプレースホルダで渡す
+  // 1 本のプレースホルダは 65,535 個までなので、1,000 行ずつに分ける（9 列でも 9,000 個）
   async #insert(table: string, columns: string[], rows: unknown[][]): Promise<void> {
     for (let start = 0; start < rows.length; start += CHUNK_SIZE) {
-      await this.#db.query("INSERT INTO ?? (??) VALUES ?", [table, columns, rows.slice(start, start + CHUNK_SIZE)]);
+      const chunk = rows.slice(start, start + CHUNK_SIZE);
+      const tuples = chunk.map((_, r) => `(${columns.map((_column, c) => `$${r * columns.length + c + 1}`).join(", ")})`);
+      await this.#db.query(`INSERT INTO ${table} (${columns.join(", ")}) VALUES ${tuples.join(", ")}`, chunk.flat());
     }
   }
 

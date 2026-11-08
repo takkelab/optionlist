@@ -1,16 +1,15 @@
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST・PATCH・DELETE /api/options、PUT /api/options/order（api.md §2、testing.md §2）
-const pool = new MySqlPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env).create();
 const data = new TestDatabase(pool);
-const api = new OptionsApiClient(new TestApp({ db: new MySqlDatabase(pool, new PromMetrics()) }).build());
+const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
 const VALIDATION_ERROR = { error: { code: "VALIDATION_ERROR" } };
 const NOT_FOUND = { error: { code: "NOT_FOUND" } };
 const PENDING = "?status=pending";
@@ -135,11 +134,11 @@ describe("DELETE /api/options/:id", () => {
   it("deletes the option with its achievements", async () => {
     const { id } = await api.added("a");
     const other = await api.added("b");
-    await pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES (?, NOW(3)), (?, NOW(3))", [id, other.id]);
+    await pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES ($1, now()), ($2, now())", [id, other.id]);
 
     expect(await api.remove(id)).toMatchObject({ status: 204, text: "" });
     expect(await api.detail(id)).toMatchObject({ status: 404 });
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const { rows } = await pool.query(
       "SELECT COUNT(*) AS achievements FROM achievements",
     );
     expect(rows).toEqual([{ achievements: 1 }]);
@@ -163,12 +162,12 @@ describe("PUT /api/options/order", () => {
 
   it("renumbers every pending option when a moved one does not fit between its neighbours", async () => {
     await pool.query(
-      `INSERT INTO options (id, title, sort_order, created_at, updated_at) VALUES
-       (1, 'a', 1, NOW(3), NOW(3)), (2, 'b', 2, NOW(3), NOW(3)), (3, 'c', 3, NOW(3), NOW(3))`,
+      `INSERT INTO options (id, title, sort_order, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
+       (1, 'a', 1, now(), now()), (2, 'b', 2, now(), now()), (3, 'c', 3, now(), now())`,
     );
     expect(await api.reorder({ ids: [1, 3, 2] })).toMatchObject({ status: 204 });
     expect(await api.titles(PENDING)).toEqual(["a", "c", "b"]);
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT id, sort_order FROM options ORDER BY sort_order");
+    const { rows } = await pool.query("SELECT id, sort_order FROM options ORDER BY sort_order");
     expect(rows).toEqual([
       { id: 1, sort_order: 1024 },
       { id: 3, sort_order: 2048 },

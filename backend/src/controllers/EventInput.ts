@@ -9,7 +9,7 @@ export interface EventInputParser {
 const TYPES: readonly unknown[] = ["client_error"] satisfies Event["type"][];
 const MAX_EVENTS = 50;
 const MAX_PAYLOAD_BYTES = 2048;
-// ISO 8601 の日時（タイムゾーン付き）。MySQL の DATETIME に入るのは 1000〜9999 年（UTC に直したあとで確かめる）
+// ISO 8601 の日時（タイムゾーン付き）。受ける年は 1000〜9999 年（UTC に直したあとで確かめる。DB の timestamptz はもっと広いが、API の範囲は変えない）
 const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 const YEAR_MIN = 1000;
 const YEAR_MAX = 9999;

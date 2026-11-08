@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { CompletionScreen } from '../support/CompletionScreen'
 import { OptionSeed } from '../support/OptionSeed'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
 import { SuggestionsScreen } from '../support/SuggestionsScreen'
 import { UiProbe } from '../support/UiProbe'
@@ -10,7 +10,7 @@ import { WishListScreen } from '../support/WishListScreen'
 
 // metrics.md §3 の LCP（各画面、幅 390px）とタップ領域を測り、results/ui-metrics.json に書く
 // 判定は npm run metrics:check（scripts/lib/e2e-collector.ts）が行う。ここでは測るだけ
-const data = new MySqlTestData()
+const data = new PgTestData()
 const probe = new UiProbe()
 const SAMPLE_OPTIONS = 20
 

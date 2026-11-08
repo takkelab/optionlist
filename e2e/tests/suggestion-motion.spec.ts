@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
 import { SuggestionsScreen } from '../support/SuggestionsScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 
 // 提案の画面の動き（進む・戻るの滑り、追加ボタンの弾み。screens.md §1・§5、docs/decisions/0026・0027）
-const data = new MySqlTestData()
+const data = new PgTestData()
 // 今月のおすすめは端末の日付で決まるので、12 月に固定する（提案 1 は 12 月の「ふたご座流星群を見る」）
 const DECEMBER = new Date('2026-12-10T10:00:00')
 const GEMINIDS = 1

@@ -17,20 +17,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: postgres:17
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: optionlist_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: optionlist_test
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-cmd="pg_isready -U postgres -h 127.0.0.1"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
     env:
-      DATABASE_URL: mysql://root:root@127.0.0.1:3306/optionlist_test
+      # サービスコンテナは SSL を使わない（dbmate は sslmode を書かないと SSL でつなごうとする）
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/optionlist_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

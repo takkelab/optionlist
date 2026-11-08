@@ -1,13 +1,13 @@
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakeDatabase } from "../fakes/FakeDatabase";
 import { TestApp } from "../fakes/TestApp";
 
-// テスト用 DB（CI は MySQL サービスコンテナ、ローカルは backend/.env.test）を使う
-const pool = new MySqlPoolFactory(process.env).create();
+// テスト用 DB（CI は PostgreSQL のサービスコンテナ、ローカルは backend/.env.test）を使う
+const pool = new PgPoolFactory(process.env).create();
 
 afterAll(async () => {
   await pool.end();
@@ -16,7 +16,7 @@ afterAll(async () => {
 describe("GET /api/health/db", () => {
   it("returns ok and records the query time when the database is reachable", async () => {
     const metrics = new PromMetrics();
-    const app = new TestApp({ db: new MySqlDatabase(pool, metrics), metrics }).build();
+    const app = new TestApp({ db: new PgDatabase(pool, metrics), metrics }).build();
 
     const res = await request(app).get("/api/health/db");
     expect(res.status).toBe(200);

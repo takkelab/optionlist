@@ -1,16 +1,15 @@
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // GET /api/options、GET /api/options/:id（api.md §2、testing.md §2）
-const pool = new MySqlPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env).create();
 const data = new TestDatabase(pool);
-const api = new OptionsApiClient(new TestApp({ db: new MySqlDatabase(pool, new PromMetrics()) }).build());
+const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
 const VALIDATION_ERROR = { error: { code: "VALIDATION_ERROR" } };
 
 beforeEach(async () => {
@@ -25,7 +24,7 @@ afterAll(async () => {
 describe("GET /api/options", () => {
   it("lists pending options with a plan date first in date order (id order on the same day), then the others in sort order", async () => {
     await pool.query(
-      `INSERT INTO options (id, title, status, sort_order, planned_on, created_at, updated_at) VALUES
+      `INSERT INTO options (id, title, status, sort_order, planned_on, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
        (1, 'a', 'pending', 2, '2026-11-23', '2026-11-01 00:00:00', '2026-11-01 00:00:00'),
        (2, 'b', 'pending', 1, NULL, '2026-11-01 00:00:00', '2026-11-01 00:00:00'),
        (3, 'c', 'completed', 0, NULL, '2026-11-01 00:00:00', '2026-11-01 00:00:00'),
@@ -33,7 +32,7 @@ describe("GET /api/options", () => {
        (5, 'e', 'pending', 0, '2026-11-23', '2026-11-01 00:00:00', '2026-11-01 00:00:00'),
        (6, 'f', 'pending', -1, NULL, '2026-11-01 00:00:00', '2026-11-01 00:00:00')`,
     );
-    await pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES (1, NOW(3)), (1, NOW(3)), (3, NOW(3))");
+    await pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES (1, now()), (1, now()), (3, now())");
 
     const { status, body } = await api.list("?status=pending");
     expect(status).toBe(200);
@@ -60,10 +59,10 @@ describe("GET /api/options", () => {
 
   it("lists completed options with the newest completedAt first", async () => {
     await pool.query(
-      `INSERT INTO options (id, title, status, sort_order, completed_at, created_at, updated_at) VALUES
-       (1, 'old', 'completed', 0, '2026-10-01 00:00:00', NOW(3), NOW(3)),
-       (2, 'new', 'completed', 0, '2026-10-02 00:00:00', NOW(3), NOW(3)),
-       (3, 'p', 'pending', 0, NULL, NOW(3), NOW(3))`,
+      `INSERT INTO options (id, title, status, sort_order, completed_at, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
+       (1, 'old', 'completed', 0, '2026-10-01 00:00:00', now(), now()),
+       (2, 'new', 'completed', 0, '2026-10-02 00:00:00', now(), now()),
+       (3, 'p', 'pending', 0, NULL, now(), now())`,
     );
     const { body } = await api.list("?status=completed");
     expect(body).toMatchObject([
@@ -82,10 +81,10 @@ describe("GET /api/options", () => {
 describe("GET /api/options/:id", () => {
   it("returns the option with its plan date and achievements in time order", async () => {
     await pool.query(
-      `INSERT INTO options (id, title, sort_order, planned_on, created_at, updated_at) VALUES
-       (1, 'a', 0, '2026-11-23', NOW(3), NOW(3)), (2, 'b', 1, NULL, NOW(3), NOW(3))`,
+      `INSERT INTO options (id, title, sort_order, planned_on, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
+       (1, 'a', 0, '2026-11-23', now(), now()), (2, 'b', 1, NULL, now(), now())`,
     );
-    await pool.query("INSERT INTO achievements (id, option_id, achieved_at) VALUES (1, 1, '2026-11-01 00:00:05')");
+    await pool.query("INSERT INTO achievements (id, option_id, achieved_at) OVERRIDING SYSTEM VALUE VALUES (1, 1, '2026-11-01 00:00:05')");
 
     const { status, body } = await api.detail(1);
     expect(status).toBe(200);
@@ -102,9 +101,9 @@ describe("GET /api/options/:id", () => {
 
   it("returns the first step of the suggestion it was added from", async () => {
     await pool.query(
-      "INSERT INTO options (id, title, suggestion_id, sort_order, created_at, updated_at) VALUES (1, 'a', 10, 0, NOW(3), NOW(3))",
+      "INSERT INTO options (id, title, suggestion_id, sort_order, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (1, 'a', 10, 0, now(), now())",
     );
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT first_step FROM suggestions WHERE id = 10");
+    const { rows } = await pool.query("SELECT first_step FROM suggestions WHERE id = 10");
     const [row] = rows;
 
     const { status, body } = await api.detail(1);

@@ -1,15 +1,11 @@
-// EXPLAIN の 1 行（table と type の列を見る）
-export type PlanRow = Record<string, unknown>;
-
 export interface ScanFinder {
-  // EXPLAIN の行のうち、type = ALL で数える表の名前（別名でなく本当の表名）
-  fullScans(sql: string, plan: PlanRow[]): string[];
+  // EXPLAIN (FORMAT JSON) の結果のうち、Seq Scan で読む表の名前（別名でなく本当の表名）
+  fullScans(plan: unknown): string[];
 }
 
-// 別名に使わない語（FROM・JOIN の直後の表名に続く語）
-const KEYWORDS = new Set(["on", "where", "left", "right", "inner", "join", "group", "order", "limit", "set", "using"]);
+type PlanNode = { "Node Type"?: unknown; "Relation Name"?: unknown; Plans?: unknown };
 
-// 主要クエリのフルテーブルスキャン（metrics.md §4）を数える。EXPLAIN の table は別名なので、SQL の FROM・JOIN から表名に戻す
+// 主要クエリのフルテーブルスキャン（metrics.md §4）を数える。EXPLAIN の木（Plan とその Plans）を全部たどる
 // マスターデータの表（提案の一覧の API が全部読む。docs/decisions/0021）は数えない
 export class FullScanFinder implements ScanFinder {
   readonly #ignored: ReadonlySet<string>;
@@ -18,21 +14,21 @@ export class FullScanFinder implements ScanFinder {
     this.#ignored = new Set(ignoredTables);
   }
 
-  fullScans(sql: string, plan: PlanRow[]): string[] {
-    const tables = this.#aliases(sql);
-    return plan
-      .filter((row) => row.type === "ALL")
-      .map((row) => String(row.table))
-      .map((name) => tables.get(name) ?? name)
-      .filter((name) => !this.#ignored.has(name));
+  // FORMAT JSON の結果は [{ Plan: {...} }] の形
+  fullScans(plan: unknown): string[] {
+    const roots = Array.isArray(plan) ? plan.map((entry: unknown) => this.#field(entry, "Plan")) : [];
+    return roots.flatMap((node) => this.#scans(node)).filter((name) => !this.#ignored.has(name));
   }
 
-  #aliases(sql: string): Map<string, string> {
-    const aliases = new Map<string, string>();
-    for (const [, table = "", alias] of sql.matchAll(/\b(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/gi)) {
-      aliases.set(table, table);
-      if (alias !== undefined && !KEYWORDS.has(alias.toLowerCase())) aliases.set(alias, table);
-    }
-    return aliases;
+  #scans(node: unknown): string[] {
+    if (typeof node !== "object" || node === null) return [];
+    const { "Node Type": type, "Relation Name": relation, Plans: children }: PlanNode = node;
+    const own = type === "Seq Scan" && typeof relation === "string" ? [relation] : [];
+    const nested = Array.isArray(children) ? children.flatMap((child: unknown) => this.#scans(child)) : [];
+    return [...own, ...nested];
+  }
+
+  #field(value: unknown, key: string): unknown {
+    return typeof value === "object" && value !== null && key in value ? (value as Record<string, unknown>)[key] : undefined;
   }
 }

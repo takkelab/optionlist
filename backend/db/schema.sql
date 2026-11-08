@@ -1,183 +1,382 @@
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!50503 SET NAMES utf8mb4 */;
-/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-/*!40103 SET TIME_ZONE='+00:00' */;
-/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+\restrict dbmate
+
+-- Dumped from database version 17.11
+-- Dumped by pg_dump version 17.11
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
 
 --
--- Table structure for table `achievements`
+-- Name: achievements; Type: TABLE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `achievements` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `option_id` int unsigned NOT NULL,
-  `achieved_at` datetime(3) NOT NULL,
-  `photo_filename` varchar(100) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_achievements_achieved_at` (`achieved_at`),
-  KEY `idx_achievements_option_id_achieved_at_photo` (`option_id`,`achieved_at`,`photo_filename`),
-  CONSTRAINT `fk_achievements_option` FOREIGN KEY (`option_id`) REFERENCES `options` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE public.achievements (
+    id bigint NOT NULL,
+    option_id bigint NOT NULL,
+    achieved_at timestamp(3) with time zone NOT NULL,
+    photo_filename character varying(100)
+);
+
 
 --
--- Table structure for table `events`
+-- Name: achievements_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `events` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `type` varchar(50) NOT NULL,
-  `payload` json NOT NULL,
-  `occurred_at` datetime(3) NOT NULL,
-  `received_at` datetime(3) NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_events_occurred_at` (`occurred_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+ALTER TABLE public.achievements ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.achievements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
--- Table structure for table `options`
+-- Name: events; Type: TABLE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `options` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `title` varchar(200) NOT NULL,
-  `status` enum('pending','completed') NOT NULL DEFAULT 'pending',
-  `suggestion_id` int unsigned DEFAULT NULL,
-  `sort_order` int NOT NULL,
-  `planned_on` date DEFAULT NULL,
-  `completed_at` datetime(3) DEFAULT NULL,
-  `created_at` datetime(3) NOT NULL,
-  `updated_at` datetime(3) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_options_suggestion_id` (`suggestion_id`),
-  KEY `idx_options_status_sort_order` (`status`,`sort_order`),
-  CONSTRAINT `fk_options_suggestion` FOREIGN KEY (`suggestion_id`) REFERENCES `suggestions` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE public.events (
+    id bigint NOT NULL,
+    type character varying(50) NOT NULL,
+    payload jsonb NOT NULL,
+    occurred_at timestamp(3) with time zone NOT NULL,
+    received_at timestamp(3) with time zone NOT NULL
+);
+
 
 --
--- Table structure for table `schema_migrations`
+-- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `schema_migrations` (
-  `version` varchar(128) NOT NULL,
-  PRIMARY KEY (`version`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+ALTER TABLE public.events ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
--- Table structure for table `suggestion_tags`
+-- Name: options; Type: TABLE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `suggestion_tags` (
-  `suggestion_id` int unsigned NOT NULL,
-  `tag_id` int unsigned NOT NULL,
-  PRIMARY KEY (`suggestion_id`,`tag_id`),
-  KEY `idx_suggestion_tags_tag_id` (`tag_id`),
-  CONSTRAINT `fk_suggestion_tags_suggestion` FOREIGN KEY (`suggestion_id`) REFERENCES `suggestions` (`id`),
-  CONSTRAINT `fk_suggestion_tags_tag` FOREIGN KEY (`tag_id`) REFERENCES `tags` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE public.options (
+    id bigint NOT NULL,
+    title character varying(200) NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    suggestion_id bigint,
+    sort_order integer NOT NULL,
+    planned_on date,
+    completed_at timestamp(3) with time zone,
+    created_at timestamp(3) with time zone NOT NULL,
+    updated_at timestamp(3) with time zone NOT NULL,
+    CONSTRAINT chk_options_status CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text])))
+);
+
 
 --
--- Table structure for table `suggestions`
+-- Name: options_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `suggestions` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `theme_id` int unsigned NOT NULL,
-  `title` varchar(200) NOT NULL,
-  `hook` varchar(100) NOT NULL,
-  `trivia` varchar(300) NOT NULL,
-  `first_step` varchar(100) NOT NULL,
-  `size` enum('hour','half_day','day','overnight') NOT NULL,
-  `season_from` tinyint unsigned DEFAULT NULL,
-  `season_to` tinyint unsigned DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_suggestions_theme_id` (`theme_id`),
-  CONSTRAINT `fk_suggestions_theme` FOREIGN KEY (`theme_id`) REFERENCES `themes` (`id`),
-  CONSTRAINT `chk_suggestions_season` CHECK ((((`season_from` is null) and (`season_to` is null)) or ((`season_from` is not null) and (`season_to` is not null) and (`season_from` between 1 and 12) and (`season_to` between 1 and 12))))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+ALTER TABLE public.options ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.options_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
--- Table structure for table `tags`
+-- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `tags` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(30) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_tags_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE public.schema_migrations (
+    version character varying NOT NULL
+);
+
 
 --
--- Table structure for table `themes`
+-- Name: suggestion_tags; Type: TABLE; Schema: public; Owner: -
 --
 
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `themes` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) NOT NULL,
-  `sort_order` int NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+CREATE TABLE public.suggestion_tags (
+    suggestion_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
 
 --
--- Dumping routines for database 'optionlist'
+-- Name: suggestions; Type: TABLE; Schema: public; Owner: -
 --
-/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
-/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+CREATE TABLE public.suggestions (
+    id bigint NOT NULL,
+    theme_id bigint NOT NULL,
+    title character varying(200) NOT NULL,
+    hook character varying(100) NOT NULL,
+    trivia character varying(300) NOT NULL,
+    first_step character varying(100) NOT NULL,
+    size text NOT NULL,
+    season_from smallint,
+    season_to smallint,
+    CONSTRAINT chk_suggestions_season CHECK ((((season_from IS NULL) AND (season_to IS NULL)) OR ((season_from IS NOT NULL) AND (season_to IS NOT NULL) AND ((season_from >= 1) AND (season_from <= 12)) AND ((season_to >= 1) AND (season_to <= 12))))),
+    CONSTRAINT chk_suggestions_size CHECK ((size = ANY (ARRAY['hour'::text, 'half_day'::text, 'day'::text, 'overnight'::text])))
+);
 
--- Dump completed
+
+--
+-- Name: suggestions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.suggestions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.suggestions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: tags; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tags (
+    id bigint NOT NULL,
+    name character varying(30) NOT NULL
+);
+
+
+--
+-- Name: tags_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tags ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tags_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: themes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.themes (
+    id bigint NOT NULL,
+    name character varying(50) NOT NULL,
+    sort_order integer NOT NULL
+);
+
+
+--
+-- Name: themes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.themes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.themes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: achievements achievements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.achievements
+    ADD CONSTRAINT achievements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: options options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.options
+    ADD CONSTRAINT options_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: suggestion_tags suggestion_tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.suggestion_tags
+    ADD CONSTRAINT suggestion_tags_pkey PRIMARY KEY (suggestion_id, tag_id);
+
+
+--
+-- Name: suggestions suggestions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.suggestions
+    ADD CONSTRAINT suggestions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tags tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: themes themes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.themes
+    ADD CONSTRAINT themes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: options uq_options_suggestion_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.options
+    ADD CONSTRAINT uq_options_suggestion_id UNIQUE (suggestion_id);
+
+
+--
+-- Name: tags uq_tags_name; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT uq_tags_name UNIQUE (name);
+
+
+--
+-- Name: idx_achievements_achieved_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_achievements_achieved_at ON public.achievements USING btree (achieved_at);
+
+
+--
+-- Name: idx_achievements_option_id_achieved_at_photo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_achievements_option_id_achieved_at_photo ON public.achievements USING btree (option_id, achieved_at, photo_filename);
+
+
+--
+-- Name: idx_events_occurred_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_occurred_at ON public.events USING btree (occurred_at);
+
+
+--
+-- Name: idx_options_status_sort_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_options_status_sort_order ON public.options USING btree (status, sort_order);
+
+
+--
+-- Name: idx_suggestion_tags_tag_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_suggestion_tags_tag_id ON public.suggestion_tags USING btree (tag_id);
+
+
+--
+-- Name: idx_suggestions_theme_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_suggestions_theme_id ON public.suggestions USING btree (theme_id);
+
+
+--
+-- Name: achievements fk_achievements_option; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.achievements
+    ADD CONSTRAINT fk_achievements_option FOREIGN KEY (option_id) REFERENCES public.options(id) ON DELETE CASCADE;
+
+
+--
+-- Name: options fk_options_suggestion; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.options
+    ADD CONSTRAINT fk_options_suggestion FOREIGN KEY (suggestion_id) REFERENCES public.suggestions(id);
+
+
+--
+-- Name: suggestion_tags fk_suggestion_tags_suggestion; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.suggestion_tags
+    ADD CONSTRAINT fk_suggestion_tags_suggestion FOREIGN KEY (suggestion_id) REFERENCES public.suggestions(id);
+
+
+--
+-- Name: suggestion_tags fk_suggestion_tags_tag; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.suggestion_tags
+    ADD CONSTRAINT fk_suggestion_tags_tag FOREIGN KEY (tag_id) REFERENCES public.tags(id);
+
+
+--
+-- Name: suggestions fk_suggestions_theme; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.suggestions
+    ADD CONSTRAINT fk_suggestions_theme FOREIGN KEY (theme_id) REFERENCES public.themes(id);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict dbmate
+
 
 --
 -- Dbmate schema migrations
 --
 
-LOCK TABLES `schema_migrations` WRITE;
-INSERT INTO `schema_migrations` (version) VALUES
-  ('20261101000001'),
-  ('20261101000002'),
-  ('20261101000003'),
-  ('20261101000004'),
-  ('20261101000005'),
-  ('20261101000006'),
-  ('20261101131910'),
-  ('20261101131913'),
-  ('20261101131915'),
-  ('20261102150137'),
-  ('20261103062436'),
-  ('20261103062438'),
-  ('20261106144204');
-UNLOCK TABLES;
+INSERT INTO public.schema_migrations (version) VALUES
+    ('20261108000000');

@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test'
 import { CompletionScreen } from '../support/CompletionScreen'
 import { OptionSeed } from '../support/OptionSeed'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §4・§6: 🎉 → 労いの演出 → 移動の確認、やったリスト、やりたいリストに戻す。testing.md §5 のシナリオ 2・3・8
-const data = new MySqlTestData()
+const data = new PgTestData()
 
 test.beforeEach(async () => {
   await data.reset()

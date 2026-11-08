@@ -2,13 +2,12 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Express } from "express";
-import type { RowDataPacket } from "mysql2/promise";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Achievement, Option } from "../../../shared/types";
 import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakePhotoFiles } from "../fakes/FakePhotoFiles";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
@@ -16,9 +15,9 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // 達成の写真（api.md §2・§5、testing.md §2）。保存先はテストごとの一時フォルダ
-const pool = new MySqlPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env).create();
 const data = new TestDatabase(pool);
-const dbWrapper = new MySqlDatabase(pool, new PromMetrics());
+const dbWrapper = new PgDatabase(pool, new PromMetrics());
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-photos-"));
 const app: Express = new TestApp({ db: dbWrapper, photoFiles: new LocalPhotoFiles(uploadDir) }).build();
 const api = new OptionsApiClient(app);
@@ -100,9 +99,9 @@ describe("PUT /api/achievements/:id/photo", () => {
   it("uses the newest achievement that has a photo for the option", async () => {
     const { id: optionId } = await api.added("a");
     await pool.query(
-      `INSERT INTO achievements (id, option_id, achieved_at, photo_filename) VALUES
-       (1, ?, '2026-11-01 00:00:00', 'old.jpg'), (2, ?, '2026-11-02 00:00:00', 'new.jpg'), (3, ?, '2026-11-03 00:00:00', NULL)`,
-      [optionId, optionId, optionId],
+      `INSERT INTO achievements (id, option_id, achieved_at, photo_filename) OVERRIDING SYSTEM VALUE VALUES
+       (1, $1, '2026-11-01 00:00:00', 'old.jpg'), (2, $1, '2026-11-02 00:00:00', 'new.jpg'), (3, $1, '2026-11-03 00:00:00', NULL)`,
+      [optionId],
     );
     const { body } = await api.list("?status=pending");
     expect((body as Option[])[0]).toMatchObject({ latestPhotoUrl: "/api/photos/new.jpg" });
@@ -193,7 +192,7 @@ describe("DELETE /api/options/:id and the photos", () => {
     expect(folder.files()).toHaveLength(1);
     expect(await api.remove(achievement.optionId)).toMatchObject({ status: 204 });
     expect(folder.files()).toEqual([]);
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS n FROM achievements");
+    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM achievements");
     expect(rows).toEqual([{ n: 0 }]);
   });
 
