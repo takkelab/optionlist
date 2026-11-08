@@ -65,5 +65,6 @@ export type Event = {
 };
 
 export type ApiError = {
-  error: { code: "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "INTERNAL_ERROR"; message: string };
+  // TOO_MANY_REQUESTS は回数の制限（api.md §6）。Retry-After のヘッダーが付く
+  error: { code: "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL_ERROR"; message: string };
 };

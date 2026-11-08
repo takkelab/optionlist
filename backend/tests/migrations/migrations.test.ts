@@ -77,6 +77,11 @@ describe("schema after all migrations", () => {
       "achievements.option_id bigint NOT NULL",
       "achievements.achieved_at timestamp(3) with time zone NOT NULL",
       "achievements.photo_filename character varying(100) NULL",
+      "achievements.user_id bigint NOT NULL",
+      "auth_attempts.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
+      "auth_attempts.kind text NOT NULL",
+      "auth_attempts.ip_hash bytea NOT NULL",
+      "auth_attempts.occurred_at timestamp(3) with time zone NOT NULL",
       "events.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
       "events.type character varying(50) NOT NULL",
       "events.payload jsonb NOT NULL",
@@ -91,6 +96,7 @@ describe("schema after all migrations", () => {
       "options.completed_at timestamp(3) with time zone NULL",
       "options.created_at timestamp(3) with time zone NOT NULL",
       "options.updated_at timestamp(3) with time zone NOT NULL",
+      "options.user_id bigint NOT NULL",
       "suggestion_tags.suggestion_id bigint NOT NULL",
       "suggestion_tags.tag_id bigint NOT NULL",
       "suggestions.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
@@ -107,6 +113,11 @@ describe("schema after all migrations", () => {
       "themes.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
       "themes.name character varying(50) NOT NULL",
       "themes.sort_order integer NOT NULL",
+      "users.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
+      "users.session_hash bytea NOT NULL",
+      "users.recovery_code_hash bytea NULL",
+      "users.created_at timestamp(3) with time zone NOT NULL",
+      "users.last_seen_at timestamp(3) with time zone NOT NULL",
     ]);
   });
 
@@ -116,11 +127,17 @@ describe("schema after all migrations", () => {
       "achievements.achievements_pkey UNIQUE (id)",
       "achievements.idx_achievements_achieved_at (achieved_at)",
       "achievements.idx_achievements_option_id_achieved_at_photo (option_id, achieved_at, photo_filename)",
+      "achievements.idx_achievements_user_id (user_id)",
+      "achievements.uq_achievements_photo_filename UNIQUE (photo_filename)",
+      "auth_attempts.auth_attempts_pkey UNIQUE (id)",
+      "auth_attempts.idx_auth_attempts_kind_ip_hash_occurred_at (kind, ip_hash, occurred_at)",
       "events.events_pkey UNIQUE (id)",
       "events.idx_events_occurred_at (occurred_at)",
-      "options.idx_options_status_sort_order (status, sort_order)",
+      "options.idx_options_user_id_status_completed_at (user_id, status, completed_at)",
+      "options.idx_options_user_id_status_sort_order (user_id, status, sort_order)",
       "options.options_pkey UNIQUE (id)",
-      "options.uq_options_suggestion_id UNIQUE (suggestion_id)",
+      "options.uq_options_id_user_id UNIQUE (id, user_id)",
+      "options.uq_options_user_id_suggestion_id UNIQUE (user_id, suggestion_id)",
       "suggestion_tags.idx_suggestion_tags_tag_id (tag_id)",
       "suggestion_tags.suggestion_tags_pkey UNIQUE (suggestion_id, tag_id)",
       "suggestions.idx_suggestions_theme_id (theme_id)",
@@ -128,17 +145,24 @@ describe("schema after all migrations", () => {
       "tags.tags_pkey UNIQUE (id)",
       "tags.uq_tags_name UNIQUE (name)",
       "themes.themes_pkey UNIQUE (id)",
+      "users.idx_users_last_seen_at (last_seen_at)",
+      "users.uq_users_recovery_code_hash UNIQUE (recovery_code_hash)",
+      "users.uq_users_session_hash UNIQUE (session_hash)",
+      "users.users_pkey UNIQUE (id)",
     ]);
     // ON DELETE を書かないと NO ACTION。提案は消さないので、参照されていても困らない
+    // 達成は (option_id, user_id) の複合外部キーで、項目の持ち主と必ず同じ人になる（data.md §2）
     expect(foreignKeys).toEqual([
-      "achievements.fk_achievements_option FOREIGN KEY (option_id) REFERENCES options(id) ON DELETE CASCADE",
+      "achievements.fk_achievements_option_user FOREIGN KEY (option_id, user_id) REFERENCES options(id, user_id) ON DELETE CASCADE",
       "options.fk_options_suggestion FOREIGN KEY (suggestion_id) REFERENCES suggestions(id)",
+      "options.fk_options_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
       "suggestion_tags.fk_suggestion_tags_suggestion FOREIGN KEY (suggestion_id) REFERENCES suggestions(id)",
       "suggestion_tags.fk_suggestion_tags_tag FOREIGN KEY (tag_id) REFERENCES tags(id)",
       "suggestions.fk_suggestions_theme FOREIGN KEY (theme_id) REFERENCES themes(id)",
     ]);
     // MySQL の ENUM の代わりに text と CHECK で値を決める（data.md §2）
     expect(checks).toEqual([
+      "auth_attempts.chk_auth_attempts_kind CHECK ((kind = ANY (ARRAY['create_account'::text, 'restore'::text])))",
       "options.chk_options_status CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text])))",
       "suggestions.chk_suggestions_season CHECK ((((season_from IS NULL) AND (season_to IS NULL)) OR ((season_from IS NOT NULL) AND (season_to IS NOT NULL) AND ((season_from >= 1) AND (season_from <= 12)) AND ((season_to >= 1) AND (season_to <= 12)))))",
       "suggestions.chk_suggestions_size CHECK ((size = ANY (ARRAY['hour'::text, 'half_day'::text, 'day'::text, 'overnight'::text])))",
@@ -168,8 +192,13 @@ describe("schema after all migrations", () => {
   });
 
   it.each([
-    ["options", "INSERT INTO options (title, status, sort_order, created_at, updated_at) VALUES ('t', 'done', 0, now(), now())"],
+    [
+      "options",
+      `WITH u AS (INSERT INTO users (session_hash, created_at, last_seen_at) VALUES ('\\x01', now(), now()) RETURNING id)
+       INSERT INTO options (user_id, title, status, sort_order, created_at, updated_at) SELECT id, 't', 'done', 0, now(), now() FROM u`,
+    ],
     ["suggestions", "INSERT INTO suggestions (theme_id, title, hook, trivia, first_step, size) VALUES (1, 't', 'h', 'x', 'f', 'week')"],
+    ["auth_attempts", "INSERT INTO auth_attempts (kind, ip_hash, occurred_at) VALUES ('login', '\\x01', now())"],
   ])("rejects an unknown value in the text column of %s", async (_table, statement) => {
     await expect(sql.rows(statement)).rejects.toMatchObject({ code: "23514" });
   });

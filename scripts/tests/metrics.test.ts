@@ -189,6 +189,61 @@ describe("CommandCollector", () => {
     assert.equal(failures?.kind === "value" && failures.value, 1);
   });
 
+  // testing.md §7。分離テストのファイルの失敗と、RLS のテストの「RLS coverage」の失敗を数える
+  it("他人のデータの確かめの失敗を数え、結果やケースがなければ missing", () => {
+    const vitest = (cases: { file: string; describe: string; status: string }[]) =>
+      JSON.stringify({
+        testResults: [...new Set(cases.map((c) => c.file))].map((file) => ({
+          name: `C:\\repo\\backend\\${file.replaceAll("/", "\\")}`,
+          assertionResults: cases.filter((c) => c.file === file).map((c) => ({ ancestorTitles: [c.describe], status: c.status })),
+        })),
+      });
+    const value = (files: Record<string, string>, id: string) => collect(files).measurements.find((m) => m.id === id);
+    const backend = "backend/coverage/all/results.json";
+    const migrations = "backend/coverage/migrations/results.json";
+    assert.equal(value({}, "tenant-isolation-failures")?.kind, "missing");
+    assert.equal(value({}, "rls-missing-tables")?.kind, "missing");
+    const results = {
+      [backend]: vitest([
+        { file: "tests/api/isolation.test.ts", describe: "the case table", status: "failed" },
+        { file: "tests/api/isolation.test.ts", describe: "another person's rows", status: "passed" },
+        { file: "tests/api/isolation.test.ts", describe: "another person's rows", status: "failed" },
+        { file: "tests/api/options-read.test.ts", describe: "GET", status: "failed" },
+      ]),
+      [migrations]: vitest([
+        { file: "tests/migrations/rls.test.ts", describe: "RLS coverage", status: "failed" },
+        { file: "tests/migrations/rls.test.ts", describe: "RLS coverage", status: "passed" },
+        { file: "tests/migrations/rls.test.ts", describe: "rls-checks.sql", status: "failed" },
+      ]),
+    };
+    assert.deepEqual(value(results, "tenant-isolation-failures"), { id: "tenant-isolation-failures", kind: "value", value: 2 });
+    assert.deepEqual(value(results, "rls-missing-tables"), { id: "rls-missing-tables", kind: "value", value: 1 });
+    const empty = { [backend]: vitest([]), [migrations]: vitest([{ file: "tests/migrations/rls.test.ts", describe: "other", status: "passed" }]) };
+    assert.equal(value(empty, "tenant-isolation-failures")?.kind, "missing");
+    assert.equal(value(empty, "rls-missing-tables")?.kind, "missing");
+
+    // コマンドが失敗したのに結果に失敗がない（vitest が流れる前に止まり、前回の緑の結果が残っている）なら missing
+    const stale = {
+      [backend]: JSON.stringify({ numFailedTests: 0, ...JSON.parse(vitest([{ file: "tests/api/isolation.test.ts", describe: "x", status: "passed" }])) }),
+      [migrations]: JSON.stringify({ numFailedTests: 0, numTotalTests: 1, ...JSON.parse(vitest([{ file: "tests/migrations/rls.test.ts", describe: "RLS coverage", status: "passed" }])) }),
+    };
+    const failing = new FakeCommandRunner([
+      ["audit", { output: audit }],
+      ["test:coverage", { exitCode: 1 }],
+      ["test:migrations", { exitCode: 1 }],
+    ]);
+    const staleFiles = new FakeFileSource(stale);
+    const { measurements } = new CommandCollector({
+      runner: failing,
+      files: staleFiles,
+      coverage: new JsonCoverageReader(staleFiles),
+      bundle: new ViteBundleSizeMeasurer(staleFiles),
+      log: () => undefined,
+    }).collect();
+    assert.equal(measurements.find((m) => m.id === "tenant-isolation-failures")?.kind, "missing");
+    assert.equal(measurements.find((m) => m.id === "rls-missing-tables")?.kind, "missing");
+  });
+
   it("UT カバレッジは backend と frontend の行数で重み付けして合算する", () => {
     const summary = (pct: number, total: number) =>
       JSON.stringify({ total: { lines: { pct, total }, branches: { pct: 100, total: 0 } } });
@@ -203,7 +258,7 @@ describe("CommandCollector", () => {
 });
 
 describe("計測の抜けを防ぐ", () => {
-  it("since が 1a〜4 の指標は、すべてどれかの collector が計測値を出す", () => {
+  it("since が 1a〜4・R2 の指標は、すべてどれかの collector が計測値を出す", () => {
     const config = JSON.parse(readFileSync("metrics.config.json", "utf8")) as { metrics: MetricDefinition[] };
     const files = new FakeFileSource({});
     const produced = [
@@ -230,7 +285,7 @@ describe("計測の抜けを防ぐ", () => {
       }),
       new E2eCollector({ runner: new FakeCommandRunner([]), files, log: () => undefined }),
     ].flatMap((c) => c.collect().measurements.map((m) => m.id));
-    const expected = config.metrics.filter((m) => ["1a", "1b", "1c", "2", "3", "4"].includes(m.since)).map((m) => m.id);
+    const expected = config.metrics.filter((m) => ["1a", "1b", "1c", "2", "3", "4", "R2"].includes(m.since)).map((m) => m.id);
     assert.deepEqual(expected.filter((id) => !produced.includes(id)), []);
   });
 

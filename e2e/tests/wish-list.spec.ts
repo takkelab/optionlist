@@ -65,7 +65,9 @@ test('「今日はこれどう？」に自分のリストから 1 件が出て�
   await expect(page.locator('[data-today-pick]')).not.toHaveText(first)
 })
 
-test('予定日がないカードを取っ手で並べ替えると、再読み込みしても順番が保たれる。予定日があるカードには取っ手がない', async ({ page, request }) => {
+test('予定日がないカードを取っ手で並べ替えると、再読み込みしても順番が保たれる。予定日があるカードには取っ手がない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   for (const title of ['陶芸', '登山', '温泉', '釣り']) await seed.add(title)
   await seed.plan(await seed.firstPendingId(), new PlanDates().nextYear(1, 10))
@@ -83,7 +85,9 @@ test('予定日がないカードを取っ手で並べ替えると、再読み�
   expect(await screen.titles()).toEqual(['釣り', '陶芸', '温泉', '登山'])
 })
 
-test('取っ手はキーボードでも動かせ、予定日があるカードは飛び越えない', async ({ page, request }) => {
+test('取っ手はキーボードでも動かせ、予定日があるカードは飛び越えない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   for (const title of ['陶芸', '登山', '温泉', '釣り']) await seed.add(title)
   await seed.plan(await seed.firstPendingId(), new PlanDates().nextYear(1, 10))

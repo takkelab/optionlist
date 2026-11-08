@@ -6,17 +6,19 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env --max-semi-space-size=4 src/server.ts",
     "start": "tsx --env-file=.env --max-semi-space-size=4 src/server.ts",
+    "db:roles": "tsx --env-file=.env db/roles/setup-roles.ts",
+    "db:roles:test": "tsx --env-file=.env.test db/roles/setup-roles.ts --test --recreate",
     "db:migrate": "dbmate up",
     "db:migrate:test": "dbmate --env-file .env.test --no-dump-schema up",
     "db:new": "dbmate new",
     "db:perf-data": "tsx --env-file=.env.test db/perf-data/generate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "npm run -s db:migrate:test && vitest run",
+    "test": "npm run -s db:roles:test && npm run -s db:migrate:test && vitest run",
     "test:file": "vitest run",
-    "test:coverage": "npm run -s db:migrate:test && vitest run --coverage",
+    "test:coverage": "npm run -s db:roles:test && npm run -s db:migrate:test && vitest run --coverage --reporter=default --reporter=json --outputFile.json=coverage/all/results.json",
     "test:unit:coverage": "vitest run --config vitest.unit.config.ts --coverage",
     "test:migrations": "vitest run tests/migrations --reporter=default --reporter=json --outputFile.json=coverage/migrations/results.json",
-    "test:perf": "npm run -s db:migrate:test && npm run -s db:perf-data && vitest run --config vitest.perf.config.ts"
+    "test:perf": "npm run -s db:roles:test && npm run -s db:migrate:test && npm run -s db:perf-data && vitest run --config vitest.perf.config.ts"
   },
   "dependencies": {
     "express": "^5.3.0",

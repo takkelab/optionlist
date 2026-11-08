@@ -7,9 +7,11 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/events（api.md §2、data.md §3、testing.md §2）
-const pool = new PgPoolFactory(process.env, console).create();
+// 後始末と保存されたイベントの確かめは ol_migrator（pool。ol_app は events を読めない。data.md §4）、アプリは ol_app（appPool）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 const data = new TestDatabase(pool);
-const app = new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build();
+const app = new TestApp({ db: new PgDatabase(appPool, new PromMetrics()) }).build();
 const event = { type: "client_error", payload: { message: "boom", route: "/suggestions/3" }, occurredAt: "2026-11-08T09:30:00.123+09:00" };
 
 beforeEach(async () => {
@@ -18,7 +20,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await data.reset();
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
 });
 
 describe("POST /api/events", () => {

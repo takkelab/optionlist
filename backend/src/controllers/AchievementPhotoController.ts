@@ -1,56 +1,79 @@
-import express from "express";
-import type { IRouter, RequestHandler } from "express";
+import type { RequestHandler } from "express";
 import multer from "multer";
+import type { CurrentUser } from "../middleware/SessionLocals";
 import type { AchievementPhotoUseCases } from "../services/AchievementPhotoService";
 import { AppError } from "../services/errors";
-import type { Controller, JsonResponse } from "./http";
+import type { Controller, JsonResponse, Routes } from "./http";
 import type { PathIdParser } from "./PathId";
 
 type Params = { id?: string };
+type UserId = number | null;
+
+// ファイルを返す口。Express の Response はこの形を満たす
+export interface FileResponse {
+  sendFile(path: string, options: { root: string; headers: Record<string, string> }, done: (error?: Error) => void): void;
+}
 
 const MAX_BYTES = 5 * 1024 * 1024;
-// 名前は置き換えのたびに変わるので、中身は変わらない（1 年キャッシュしてよい）
-const CACHE_MAX_AGE = "365d";
+// サーバーが決めた名前（UUID と拡張子）の形だけを受け付ける（パストラバーサル対策。api.md §5）
+const FILENAME = /^[A-Za-z0-9-]{1,80}\.(jpg|png|webp)$/;
+// 名前は置き換えのたびに変わるので、中身は変わらない（1 年キャッシュしてよい）。人ごとに違うので private と Vary: Cookie
+// 判定するのは先頭のバイトだけなので、後ろに別の中身があってもブラウザに推測させない（nosniff。api.md §5）
+const SERVE_HEADERS = {
+  "Cache-Control": "private, max-age=31536000, immutable",
+  Vary: "Cookie",
+  "X-Content-Type-Options": "nosniff",
+};
 
 // 達成の写真（api.md §2・§5）。PUT は multipart の photo を受け取り、配信は /api/photos/<ファイル名>
+// 配信は、そのファイル名が自分の達成の写真かを DB で（RLS の中で）確かめてから返す。違えば・なければ 404
 export class AchievementPhotoController implements Controller {
   readonly #ids: PathIdParser;
   readonly #photos: AchievementPhotoUseCases;
   readonly #directory: string;
+  readonly #user: CurrentUser;
 
-  constructor(ids: PathIdParser, photos: AchievementPhotoUseCases, directory: string) {
+  constructor(ids: PathIdParser, photos: AchievementPhotoUseCases, directory: string, user: CurrentUser) {
     this.#ids = ids;
     this.#photos = photos;
     this.#directory = directory;
+    this.#user = user;
   }
 
-  register(router: IRouter): void {
+  register(router: Routes): void {
     router.put("/api/achievements/:id/photo", this.#receive(), (req, res) => {
       const { file } = req;
-      return this.put(req.params, file?.buffer, res);
+      return this.put(this.#user.of(res), req.params, file?.buffer, res);
     });
-    router.delete("/api/achievements/:id/photo", (req, res) => this.remove(req.params, res));
-    router.use(
-      "/api/photos",
-      express.static(this.#directory, {
-        index: false,
-        immutable: true,
-        maxAge: CACHE_MAX_AGE,
-        // 判定するのは先頭のバイトだけなので、後ろに別の中身があってもブラウザに推測させない（api.md §5）
-        setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff"),
-      }),
-    );
+    router.delete("/api/achievements/:id/photo", (req, res) => this.remove(this.#user.of(res), req.params, res));
+    router.get("/api/photos/:filename", (req, res) => {
+      const { filename } = req.params;
+      return this.serve(this.#user.of(res), typeof filename === "string" ? filename : undefined, res);
+    });
   }
 
-  async put(params: Params, bytes: Buffer | undefined, res: JsonResponse): Promise<void> {
+  async put(userId: UserId, params: Params, bytes: Buffer | undefined, res: JsonResponse): Promise<void> {
     const id = this.#id(params.id);
     if (bytes === undefined) throw new AppError("VALIDATION_ERROR", "写真（photo）が必要");
-    res.status(200).json(await this.#photos.set(id, bytes));
+    res.status(200).json(await this.#photos.set(userId, id, bytes));
   }
 
-  async remove(params: Params, res: JsonResponse): Promise<void> {
-    await this.#photos.remove(this.#id(params.id));
+  async remove(userId: UserId, params: Params, res: JsonResponse): Promise<void> {
+    await this.#photos.remove(userId, this.#id(params.id));
     res.status(204).end();
+  }
+
+  async serve(userId: UserId, filename: string | undefined, res: FileResponse): Promise<void> {
+    if (filename === undefined || !FILENAME.test(filename) || !(await this.#photos.canServe(userId, filename))) {
+      throw this.#photoNotFound();
+    }
+    await new Promise<void>((resolve, reject) => {
+      res.sendFile(filename, { root: this.#directory, headers: SERVE_HEADERS }, (error) => {
+        if (error === undefined) resolve();
+        // 行はあるのにファイルがない（消し損ねの逆。data.md §6）も 404 にする
+        else reject(this.#photoNotFound());
+      });
+    });
   }
 
   // 受け取りで起きるエラーは、大きすぎる・multipart として読めないなど、どれもリクエストの問題（メモリに受けるのでディスクは関係しない）
@@ -67,5 +90,9 @@ export class AchievementPhotoController implements Controller {
     const id = this.#ids.parse(value);
     if (id === null) throw new AppError("NOT_FOUND", `達成 ${String(value)} が見つからない`);
     return id;
+  }
+
+  #photoNotFound(): AppError {
+    return new AppError("NOT_FOUND", "写真が見つからない");
   }
 }

@@ -19,9 +19,9 @@ jobs:
     services:
       postgres:
         image: postgres:17
+        # テスト用 DB は db:roles:test が ol_migrator の持ち物として作る（POSTGRES_DB で作ると持ち主が postgres になる。data.md §4）
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: optionlist_test
         ports:
           - 5432:5432
         options: >-
@@ -31,7 +31,11 @@ jobs:
           --health-retries=20
     env:
       # サービスコンテナは SSL を使わない（dbmate は sslmode を書かないと SSL でつなごうとする）
-      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/optionlist_test?sslmode=disable
+      # postgres はロールと DB を作るときだけ使う。マイグレーション・後始末は ol_migrator、アプリとしてのテストは ol_app（testing.md §0）
+      ADMIN_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      DATABASE_URL: postgres://ol_migrator:ol_migrator@127.0.0.1:5432/optionlist_test?sslmode=disable
+      APP_DATABASE_URL: postgres://ol_app:ol_app@127.0.0.1:5432/optionlist_test?sslmode=disable
+      IP_HASH_SECRET: ci-ip-hash-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,9 +54,15 @@ jobs:
       - name: Install the browser for E2E
         run: npx playwright install --with-deps chromium
       # dbmate の --env-file はファイルがないと止まるので、ローカルと同じく backend/.env.test を作る
-      - name: Migrate the test database
+      - name: Create the roles and migrate the test database
         run: |
-          echo "DATABASE_URL=$DATABASE_URL" > backend/.env.test
+          {
+            echo "ADMIN_DATABASE_URL=$ADMIN_DATABASE_URL"
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "APP_DATABASE_URL=$APP_DATABASE_URL"
+            echo "IP_HASH_SECRET=$IP_HASH_SECRET"
+          } > backend/.env.test
+          npm --prefix backend run db:roles:test
           npm --prefix backend run db:migrate:test
       - name: Test the quality scripts
         run: npm run test:scripts

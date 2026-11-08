@@ -11,12 +11,13 @@ type L5Options = { allowTopLevelStatements?: boolean; allowHooks?: boolean };
 const l5 = (options: L5Options): ["error", L5Options] => ["error", options];
 // 層の向き: そのフォルダから import してはいけない backend/src の層
 type Pattern = { group: string[]; message: string };
-const layer = (forbidden: string[]): ["error", { patterns: Pattern[] }] => [
+// allowed: 例外として読んでよいファイル（"!**/services/AccountService" の形）
+const layer = (forbidden: string[], allowed: string[] = []): ["error", { patterns: Pattern[] }] => [
   "error",
   {
     patterns: [
       {
-        group: [...forbidden.map((dir) => `**/${dir}/**`), "!**/services/errors"],
+        group: [...forbidden.map((dir) => `**/${dir}/**`), "!**/services/errors", ...allowed],
         message: "architecture.md §3.1: 層の向き（controllers → services → repositories → infra）に逆らう import",
       },
     ],
@@ -67,9 +68,13 @@ export default defineConfig({
     },
     { files: ["frontend/**/*.test.ts", "frontend/**/*.test.tsx"], rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true, allowHooks: true }) } },
     // L5 の例外: エントリーポイントのトップレベルの文
-    { files: ["backend/src/server.ts", "backend/db/perf-data/generate.ts"], rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true }) } },
+    {
+      files: ["backend/src/server.ts", "backend/db/perf-data/generate.ts", "backend/db/roles/setup-roles.ts"],
+      rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true }) },
+    },
     { files: ["frontend/src/main.tsx"], rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true, allowHooks: true }) } },
     { files: ["shared/**"], rules: { "design/shared-types-only": "error" } }, // L12
+    { files: ["backend/src/**"], rules: { "design/user-scoped-db": "error" } }, // L13
     // architecture.md §3.1 の層の向き（backend）。controllers → services → repositories → infra の逆向きと飛び越しを止める
     // services/errors.ts（AppError）はどの層からも読んでよい
     { files: ["backend/src/controllers/**"], rules: { "no-restricted-imports": layer(["repositories", "infra"]) } },
@@ -79,6 +84,11 @@ export default defineConfig({
     {
       files: ["backend/src/middleware/**", "backend/src/metrics/**"],
       rules: { "no-restricted-imports": layer(["controllers", "services", "repositories", "infra"]) },
+    },
+    // architecture.md §3.1 の例外: セッションの middleware は、Cookie から人を決めるために services の SessionResolver（AccountService.ts）だけを読んでよい
+    {
+      files: ["backend/src/middleware/SessionMiddleware.ts"],
+      rules: { "no-restricted-imports": layer(["controllers", "services", "repositories", "infra"], ["!**/services/AccountService"]) },
     },
     // architecture.md §3.1 の層の向き（frontend）。画面は API を Context 経由で使い、api・lib は画面を知らない
     {

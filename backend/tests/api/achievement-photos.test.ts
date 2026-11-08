@@ -13,24 +13,31 @@ import { FakePhotoFiles } from "../fakes/FakePhotoFiles";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
+import { TestUsers } from "../fakes/TestUsers";
 
 // 達成の写真（api.md §2・§5、testing.md §2）。保存先はテストごとの一時フォルダ
-const pool = new PgPoolFactory(process.env, console).create();
+// 前提の行は ol_migrator（pool）で入れ、アプリは ol_app（appPool）で動かす（testing.md §0）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 const data = new TestDatabase(pool);
-const dbWrapper = new PgDatabase(pool, new PromMetrics());
+const users = new TestUsers(pool);
+const dbWrapper = new PgDatabase(appPool, new PromMetrics());
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-photos-"));
 const app: Express = new TestApp({ db: dbWrapper, photoFiles: new LocalPhotoFiles(uploadDir) }).build();
-const api = new OptionsApiClient(app);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]);
+// 各テストの人（reset で ID が 1 から振り直されるので、直接入れる行の user_id は 1）。beforeEach で Cookie を入れる
+const api = new OptionsApiClient(app);
 
 beforeEach(async () => {
   await data.reset();
   rmSync(uploadDir, { recursive: true, force: true });
+  const { cookie } = await users.create();
+  api.use(cookie);
 });
 
 afterAll(async () => {
   await data.reset();
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
   rmSync(uploadDir, { recursive: true, force: true });
 });
 
@@ -59,8 +66,7 @@ class Steps implements PhotoSteps {
   }
 
   async put(id: number | string, bytes: Buffer, filename = "photo.jpg"): Promise<{ status: number; body: unknown }> {
-    const pending = request(app).put(`/api/achievements/${id}/photo`);
-    const { status, body } = await pending.attach("photo", bytes, filename);
+    const { status, body } = await api.upload(`/api/achievements/${id}/photo`, bytes, filename);
     return { status, body };
   }
 }
@@ -75,11 +81,15 @@ describe("PUT /api/achievements/:id/photo", () => {
     const { photoUrl } = body as Achievement;
     expect(photoUrl).toMatch(/^\/api\/photos\/[0-9a-f-]{36}\.jpg$/);
 
-    const { status: servedStatus, type, headers } = await request(app).get(String(photoUrl));
+    const { status: servedStatus, headers } = await api.send((r) => r.get(String(photoUrl)));
     expect(servedStatus).toBe(200);
-    expect(type).toBe("image/jpeg");
-    expect(headers["cache-control"]).toContain("immutable");
-    expect(headers["x-content-type-options"]).toBe("nosniff");
+    // 人ごとに違う中身なので、共有のキャッシュに置かせない（api.md §5）
+    expect(headers).toMatchObject({
+      "content-type": "image/jpeg",
+      "cache-control": "private, max-age=31536000, immutable",
+      vary: "Cookie",
+      "x-content-type-options": "nosniff",
+    });
 
     const detail = await api.detail(achievement.optionId);
     expect(detail.body).toMatchObject({ latestPhotoUrl: photoUrl, achievements: [{ id: achievement.id, photoUrl }] });
@@ -99,8 +109,8 @@ describe("PUT /api/achievements/:id/photo", () => {
   it("uses the newest achievement that has a photo for the option", async () => {
     const { id: optionId } = await api.added("a");
     await pool.query(
-      `INSERT INTO achievements (id, option_id, achieved_at, photo_filename) OVERRIDING SYSTEM VALUE VALUES
-       (1, $1, '2026-11-01 00:00:00', 'old.jpg'), (2, $1, '2026-11-02 00:00:00', 'new.jpg'), (3, $1, '2026-11-03 00:00:00', NULL)`,
+      `INSERT INTO achievements (id, user_id, option_id, achieved_at, photo_filename) OVERRIDING SYSTEM VALUE VALUES
+       (1, 1, $1, '2026-11-01 00:00:00', 'old.jpg'), (2, 1, $1, '2026-11-02 00:00:00', 'new.jpg'), (3, 1, $1, '2026-11-03 00:00:00', NULL)`,
       [optionId],
     );
     const { body } = await api.list("?status=pending");
@@ -132,9 +142,11 @@ describe("PUT /api/achievements/:id/photo", () => {
 
   it("returns 400 when the form has anything other than the photo", async () => {
     const { id } = await steps.achieved();
-    const pending = request(app).put(`/api/achievements/${id}/photo`);
-    const withField = pending.field("note", "x");
-    const { status, body } = await withField.attach("photo", JPEG, "photo.jpg");
+    const { status, body } = await api.send((r) => {
+      const pending = r.put(`/api/achievements/${id}/photo`);
+      const withField = pending.field("note", "x");
+      return withField.attach("photo", JPEG, "photo.jpg");
+    });
     expect(status).toBe(400);
     expect(body).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
     expect(folder.files()).toEqual([]);
@@ -142,7 +154,7 @@ describe("PUT /api/achievements/:id/photo", () => {
 
   it("returns 400 when no photo is sent", async () => {
     const { id } = await steps.achieved();
-    const { status } = await request(app).put(`/api/achievements/${id}/photo`).send({});
+    const { status } = await api.send((r) => r.put(`/api/achievements/${id}/photo`).send({}));
     expect(status).toBe(400);
   });
 
@@ -158,7 +170,7 @@ describe("DELETE /api/achievements/:id/photo", () => {
   it("removes the photo and its file", async () => {
     const achievement = await steps.achieved();
     await steps.put(achievement.id, JPEG);
-    const { status } = await request(app).delete(`/api/achievements/${achievement.id}/photo`);
+    const { status } = await api.send((r) => r.delete(`/api/achievements/${achievement.id}/photo`));
     expect(status).toBe(204);
     expect(folder.files()).toEqual([]);
     const detail = await api.detail(achievement.optionId);
@@ -167,21 +179,35 @@ describe("DELETE /api/achievements/:id/photo", () => {
 
   it("returns 204 when there is no photo", async () => {
     const { id } = await steps.achieved();
-    const { status } = await request(app).delete(`/api/achievements/${id}/photo`);
+    const { status } = await api.send((r) => r.delete(`/api/achievements/${id}/photo`));
     expect(status).toBe(204);
   });
 
   it("returns 404 for an achievement that does not exist", async () => {
-    const { status } = await request(app).delete("/api/achievements/999/photo");
+    const { status } = await api.send((r) => r.delete("/api/achievements/999/photo"));
     expect(status).toBe(404);
   });
 });
 
 describe("GET /api/photos", () => {
   it("returns the JSON 404 for a file that does not exist", async () => {
-    const { status, body } = await request(app).get("/api/photos/nothing.jpg");
+    const { status, body } = await api.send((r) => r.get("/api/photos/nothing.jpg"));
     expect(status).toBe(404);
     expect(body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
+
+  // 名前の形が違うもの（パストラバーサルを含む）は DB に聞かずに 404
+  it.each(["..%2F..%2Fpackage.json", "a.txt", "x.jpg.exe"])("returns 404 for the name %s", async (name) => {
+    const { status } = await api.send((r) => r.get(`/api/photos/${name}`));
+    expect(status).toBe(404);
+  });
+
+  // 行はあるのにファイルがない（消し損ねの逆）も 404
+  it("returns 404 when the row points to a missing file", async () => {
+    const { id: optionId } = await api.added("a");
+    await pool.query("INSERT INTO achievements (user_id, option_id, achieved_at, photo_filename) VALUES (1, $1, now(), 'gone.jpg')", [optionId]);
+    const { status, body } = await api.send((r) => r.get("/api/photos/gone.jpg"));
+    expect([status, body]).toMatchObject([404, { error: { code: "NOT_FOUND" } }]);
   });
 });
 
@@ -200,11 +226,11 @@ describe("DELETE /api/options/:id and the photos", () => {
     const files = new FakePhotoFiles();
     const metrics = new PromMetrics();
     const failing = new TestApp({ db: dbWrapper, metrics, photoFiles: files }).build();
-    const client = new OptionsApiClient(failing);
+    const client = new OptionsApiClient(failing, api.cookie());
     const { id } = await client.added("a");
     const { body } = await client.achieve(id);
-    const upload = request(failing).put(`/api/achievements/${(body as Achievement).id}/photo`);
-    await upload.attach("photo", JPEG, "photo.jpg");
+    const { id: achievementId } = body as Achievement;
+    await client.upload(`/api/achievements/${achievementId}/photo`, JPEG, "photo.jpg");
     files.failRemoving();
 
     expect(await client.remove(id)).toMatchObject({ status: 204 });

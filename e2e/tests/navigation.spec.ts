@@ -80,7 +80,9 @@ test('切り替えを押すと一覧が左右に滑って入れ替わり、視�
   expect(await screen.slideMotions()).toEqual([])
 })
 
-test('切り替えた先のカードは、読み込みを待ってから一覧と一緒に滑ってくる', async ({ page, request }) => {
+test('切り替えた先のカードは、読み込みを待ってから一覧と一緒に滑ってくる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.add('まだやりたい')
   await seed.complete(await seed.add('もうやった'))
@@ -155,7 +157,9 @@ test('カードをタップしても画面は移らず、タブバーも出た�
   await expect(page.getByRole('navigation', { name: '画面の切り替え' })).toBeVisible()
 })
 
-test('下にスクロールするとヘッダーが上へ引っ込み、上に戻すと降りてくる', async ({ page, request }) => {
+test('下にスクロールするとヘッダーが上へ引っ込み、上に戻すと降りてくる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   for (let i = 1; i <= 20; i++) {
     const res = await request.post('/api/options', { data: { title: `やりたいこと ${i}` } })
     expect(res.status()).toBe(201)

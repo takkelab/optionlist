@@ -6,7 +6,8 @@
 - 単体テスト（UT）は、依存をインタフェースを実装したフェイクに差し替えて書く。モジュールを丸ごと置き換えるモックは使えない（architecture.md §2 の L3）。フェイクは `backend/tests/fakes/` などにまとめて再利用する
 - 種類ごとにフォルダを分け（`tests/unit/`、`api/`、`migrations/`、`perf/`）、UT だけのカバレッジを計測できるようにする
 - DB は PostgreSQL 17（手元は Windows に直接入れたもの、CI は `postgres:17` のサービスコンテナ。architecture.md §4.1）
-- テスト用 DB は `optionlist_test`。接続先は `backend/.env.test` で切り替え、テスト開始時に dbmate で最新までマイグレーションする（`npm test` が vitest の前に `db:migrate:test` を流す）。ロール（data.md §4）は `db:roles:test` がなければ作る
+- テスト用 DB は `optionlist_test`。接続先は `backend/.env.test` で切り替え、テスト開始時に dbmate で最新までマイグレーションする（`npm test` が vitest の前に `db:roles:test` と `db:migrate:test` を流す）。ロール（data.md §4）は `db:roles:test` がなければ作り、テスト用 DB はいつも `ol_migrator` の持ち物として作り直す（別のブランチのマイグレーションの表を残さない）
+- 前提の人は、鍵が分かる人を `ol_migrator` で users に直接入れて作り（`backend/tests/fakes/TestUsers.ts`）、その Cookie で API を呼ぶ。API テストのクライアントは、応答の `Set-Cookie` で Cookie を入れ直す（ブラウザと同じ）。E2E の種まきは `page.request`（ブラウザと同じ Cookie）で呼ぶ
 - **アプリとしてのテストは、本番と同じ `ol_app` で接続する**（`APP_DATABASE_URL`）。スーパーユーザー（CI の既定の `postgres` など）は RLS を素通りし、`ol_migrator` は `USING (true)` のポリシーで全員の行を読み書きできる（data.md §4）ので、どちらで流しても RLS が効いていなくても通ってしまう。データを空にする・入れ直す後始末と、性能用データの投入だけは `ol_migrator` で行う（`DATABASE_URL`。全員の行に効く）。CI の `postgres` はロールとデータベースを作るときだけ使う
 - テスト用 DB を共有するので、backend のテストファイルは並列に流さない（vitest の `fileParallelism: false`）
 - テストで保存する画像は `UPLOAD_DIR` で別フォルダに出す

@@ -78,3 +78,4 @@
 | [0045](0045-staged-launch.md) | 公開は「自分だけで 2 週間 → 知人数人 → 一般公開」の 3 段階で進める | 確定 |
 | [0046](0046-tenant-isolation-checks.md) | 他人のデータが見えないことを、lint・マイグレーションのテスト・API のテストで機械的に確かめる | 確定 |
 | [0047](0047-postgres-baseline-details.md) | Postgres に移るときの細部（fixture の作り方、フルテーブルスキャンの数え方、ID の上限） | 確定 |
+| [0048](0048-anonymous-account-details.md) | 匿名アカウントとデータの分離の細部（R2 の範囲、ロールの作り方、2 つの指標） | 確定 |

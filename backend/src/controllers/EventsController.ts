@@ -1,7 +1,6 @@
-import type { IRouter } from "express";
 import type { EventUseCases } from "../services/EventService";
 import type { EventInputParser } from "./EventInput";
-import type { Controller, JsonResponse } from "./http";
+import type { Controller, JsonResponse, Routes } from "./http";
 
 // POST /api/events（api.md §2）。保存したら本文なしの 202
 export class EventsController implements Controller {
@@ -13,7 +12,7 @@ export class EventsController implements Controller {
     this.#events = events;
   }
 
-  register(router: IRouter): void {
+  register(router: Routes): void {
     router.post("/api/events", (req, res) => this.create(req.body, res));
   }
 

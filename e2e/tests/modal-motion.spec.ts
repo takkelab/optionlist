@@ -15,7 +15,9 @@ test.afterAll(async () => {
   await data.close()
 })
 
-test('シートと中央のダイアログ（追加・AI に相談・削除の確認）は動いて出るが、視差効果を減らす設定では動かさない', async ({ page, request }) => {
+test('シートと中央のダイアログ（追加・AI に相談・削除の確認）は動いて出るが、視差効果を減らす設定では動かさない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('朝日を見に行く')
   const list = new WishListScreen(page)
   const sheet = new OptionSheetScreen(page)

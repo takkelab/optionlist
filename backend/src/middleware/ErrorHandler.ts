@@ -23,6 +23,8 @@ export class ErrorHandler implements ErrorMiddleware {
 
   #handle(error: unknown, res: Response): void {
     if (error instanceof AppError) {
+      const retryAfter = error.retryAfterSeconds();
+      if (retryAfter !== null) res.setHeader("Retry-After", String(retryAfter));
       res.status(error.status()).json(this.#body(error.code(), error.message));
       return;
     }

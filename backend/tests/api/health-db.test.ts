@@ -8,7 +8,7 @@ import { FakeLogger } from "../fakes/FakeLogger";
 import { TestApp } from "../fakes/TestApp";
 
 // テスト用 DB（CI は PostgreSQL のサービスコンテナ、ローカルは backend/.env.test）を使う
-const pool = new PgPoolFactory(process.env, console).create();
+const pool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 
 afterAll(async () => {
   await pool.end();
@@ -18,7 +18,7 @@ afterAll(async () => {
 describe("PgPoolFactory", () => {
   it("logs an error from an idle connection instead of crashing the process", async () => {
     const logger = new FakeLogger();
-    const idle = new PgPoolFactory(process.env, logger).create();
+    const idle = new PgPoolFactory(process.env, logger, "APP_DATABASE_URL").create();
     const lost = new Error("terminating connection due to administrator command");
     try {
       expect(idle.emit("error", lost)).toBe(true);

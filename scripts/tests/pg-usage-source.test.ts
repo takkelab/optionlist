@@ -18,21 +18,23 @@ const FROM = new Date("2026-11-01T00:00:00.000Z");
 const TO = new Date("2026-11-08T00:00:00.000Z");
 const before1ms = (date: Date) => new Date(date.getTime() - 1);
 
-// option を入れて id を返す
+// option を入れて id を返す。行はどれも、clear が作る 1 人（id 1）のもの（接続は ol_migrator なので RLS を受けない）
 const addOption = async (createdAt: Date, extra: { suggestionId?: number; completed?: boolean } = {}): Promise<number> => {
   const status = extra.completed === true ? "completed" : "pending";
   const { rows } = await pool.query<{ id: string }>(
-    "INSERT INTO options (title, status, suggestion_id, sort_order, completed_at, created_at, updated_at) VALUES ('x', $1, $2, 0, $3, $4, $4) RETURNING id",
+    "INSERT INTO options (user_id, title, status, suggestion_id, sort_order, completed_at, created_at, updated_at) VALUES (1, 'x', $1, $2, 0, $3, $4, $4) RETURNING id",
     [status, extra.suggestionId ?? null, extra.completed === true ? createdAt : null, createdAt],
   );
   return Number(rows[0]?.id);
 };
-const achieve = (optionId: number, at: Date) => pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES ($1, $2)", [optionId, at]);
+const achieve = (optionId: number, at: Date) =>
+  pool.query("INSERT INTO achievements (user_id, option_id, achieved_at) VALUES (1, $1, $2)", [optionId, at]);
 const addEvent = (type: string, message: string, at: Date) =>
   pool.query("INSERT INTO events (type, payload, occurred_at, received_at) VALUES ($1, $2, $3, $3)", [type, JSON.stringify({ message, route: "/" }), at]);
 
 const clear = async () => {
-  await pool.query("TRUNCATE TABLE achievements, events, options RESTART IDENTITY");
+  await pool.query("TRUNCATE TABLE achievements, auth_attempts, events, options, users RESTART IDENTITY");
+  await pool.query("INSERT INTO users (session_hash, created_at, last_seen_at) VALUES ('\\x01', now(), now())");
 };
 
 describe("PgUsageSource", () => {

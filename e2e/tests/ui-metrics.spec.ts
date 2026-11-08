@@ -18,7 +18,9 @@ test.afterAll(async () => {
   await data.close()
 })
 
-test('各画面の LCP とタップ領域を測る', async ({ page, request }) => {
+test('各画面の LCP とタップ領域を測る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await data.reset()
   for (let i = 1; i <= SAMPLE_OPTIONS; i++) {
     const res = await request.post('/api/options', { data: { title: `やりたいこと ${i}` } })

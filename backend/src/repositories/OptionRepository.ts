@@ -1,5 +1,5 @@
 import type { Option, OptionDetail, OptionStatus } from "../../../shared/types";
-import type { Database } from "../infra/PgDatabase";
+import type { Queryable, UserScopes } from "../infra/PgDatabase";
 import { AppError } from "../services/errors";
 import type { AchievementRow, OptionRow, RowMapper } from "./OptionRowMapper";
 
@@ -18,6 +18,7 @@ export type OptionChanges = {
   updatedAt: Date;
 };
 
+// 1 人分の options の SQL。withUser の中でだけ使える
 export interface OptionStore {
   list(status: OptionStatus): Promise<Option[]>;
   find(id: number): Promise<Option | null>;
@@ -32,6 +33,11 @@ export interface OptionStore {
   // pending の id と sort_order（sort_order 順）
   pendingOrder(): Promise<SortOrderEntry[]>;
   setSortOrders(entries: SortOrderEntry[]): Promise<void>;
+}
+
+// fn の中の SQL を、その人の 1 つのトランザクションで流す（data.md §4）。fn が投げたら全部取り消す
+export interface OptionStores {
+  withUser<T>(userId: number | null, fn: (store: OptionStore) => Promise<T>): Promise<T>;
 }
 
 type IdRow = { id: number };
@@ -51,51 +57,67 @@ const UNIQUE_VIOLATION = "23505";
 const FOREIGN_KEY_VIOLATION = "23503";
 
 // 達成回数は achievements の件数から求める（data.md §2）。planned_on は pg が 2026-11-23 の文字列で返す（infra/PgPoolFactory.ts）
+// どの SQL も $1 をその人の user_id にする。RLS（data.md §4）に加えて、SQL でも絞り込む（docs/decisions/0034）
 const OPTION_COLUMNS = `o.id, o.title, o.status, o.suggestion_id, o.planned_on,
   o.completed_at, o.created_at, o.updated_at,
-  (SELECT COUNT(*) FROM achievements a WHERE a.option_id = o.id) AS achievement_count,
-  (SELECT a.photo_filename FROM achievements a WHERE a.option_id = o.id AND a.photo_filename IS NOT NULL
+  (SELECT COUNT(*) FROM achievements a WHERE a.option_id = o.id AND a.user_id = $1) AS achievement_count,
+  (SELECT a.photo_filename FROM achievements a WHERE a.option_id = o.id AND a.user_id = $1 AND a.photo_filename IS NOT NULL
     ORDER BY a.achieved_at DESC, a.id DESC LIMIT 1) AS latest_photo_filename`;
 // pending は予定日があるものを予定日の早い順に上へ、その後に予定日がないもの（同じ日は id 順、予定日なし同士は sort_order 順。
 // 同じ日を id 順にするのは、sort_order を持たない画面でも同じ並びにできるようにするため。docs/decisions/0015）。
 // completed は completed_at の新しい順（api.md §2）
 const LIST_SQL: Record<OptionStatus, string> = {
-  pending: `SELECT ${OPTION_COLUMNS} FROM options o WHERE o.status = 'pending'
+  pending: `SELECT ${OPTION_COLUMNS} FROM options o WHERE o.user_id = $1 AND o.status = 'pending'
     ORDER BY o.planned_on IS NULL, o.planned_on, CASE WHEN o.planned_on IS NULL THEN o.sort_order END, o.id`,
-  completed: `SELECT ${OPTION_COLUMNS} FROM options o WHERE o.status = 'completed' ORDER BY o.completed_at DESC, o.id DESC`,
+  completed: `SELECT ${OPTION_COLUMNS} FROM options o WHERE o.user_id = $1 AND o.status = 'completed' ORDER BY o.completed_at DESC, o.id DESC`,
 };
 
 // options テーブルの SQL。詳細は達成記録を別の SQL で取り、1 リクエスト 3 本以内に収める（metrics.md §4）
-export class OptionRepository implements OptionStore {
-  readonly #db: Database;
+export class OptionRepository implements OptionStores {
+  readonly #db: UserScopes;
   readonly #mapper: RowMapper;
 
-  constructor(db: Database, mapper: RowMapper) {
+  constructor(db: UserScopes, mapper: RowMapper) {
     this.#db = db;
     this.#mapper = mapper;
   }
 
+  withUser<T>(userId: number | null, fn: (store: OptionStore) => Promise<T>): Promise<T> {
+    const scoped = this.#db.forUser(userId);
+    return scoped.run((tx) => fn(new OptionQueries(tx, this.#mapper, userId)));
+  }
+}
+
+class OptionQueries implements OptionStore {
+  readonly #tx: Queryable;
+  readonly #mapper: RowMapper;
+  readonly #userId: number | null;
+
+  constructor(tx: Queryable, mapper: RowMapper, userId: number | null) {
+    this.#tx = tx;
+    this.#mapper = mapper;
+    this.#userId = userId;
+  }
+
   async list(status: OptionStatus): Promise<Option[]> {
-    const rows = (await this.#db.query(LIST_SQL[status])) as OptionRow[];
+    const rows = (await this.#query(LIST_SQL[status])) as OptionRow[];
     return rows.map((row) => this.#mapper.option(row));
   }
 
   async find(id: number): Promise<Option | null> {
-    const rows = (await this.#db.query(`SELECT ${OPTION_COLUMNS} FROM options o WHERE o.id = $1`, [id])) as OptionRow[];
-    const [row] = rows;
+    const [row] = (await this.#query(`SELECT ${OPTION_COLUMNS} FROM options o WHERE o.user_id = $1 AND o.id = $2`, [id])) as OptionRow[];
     return row === undefined ? null : this.#mapper.option(row);
   }
 
   // 提案から追加した項目は、追加元の提案の最初の一歩も付ける（screens.md §3）
   async findDetail(id: number): Promise<OptionDetail | null> {
-    const rows = (await this.#db.query(
-      `SELECT ${OPTION_COLUMNS}, s.first_step FROM options o LEFT JOIN suggestions s ON s.id = o.suggestion_id WHERE o.id = $1`,
+    const [row] = (await this.#query(
+      `SELECT ${OPTION_COLUMNS}, s.first_step FROM options o LEFT JOIN suggestions s ON s.id = o.suggestion_id WHERE o.user_id = $1 AND o.id = $2`,
       [id],
     )) as (OptionRow & { first_step: string | null })[];
-    const [row] = rows;
     if (row === undefined) return null;
-    const achievements = (await this.#db.query(
-      "SELECT id, option_id, achieved_at, photo_filename FROM achievements WHERE option_id = $1 ORDER BY achieved_at, id",
+    const achievements = (await this.#query(
+      "SELECT id, option_id, achieved_at, photo_filename FROM achievements WHERE user_id = $1 AND option_id = $2 ORDER BY achieved_at, id",
       [id],
     )) as AchievementRow[];
     return {
@@ -106,22 +128,20 @@ export class OptionRepository implements OptionStore {
   }
 
   async minPendingSortOrder(): Promise<number | null> {
-    const rows = (await this.#db.query("SELECT MIN(sort_order) AS min FROM options WHERE status = 'pending'")) as {
+    const [row] = (await this.#query("SELECT MIN(sort_order) AS min FROM options WHERE user_id = $1 AND status = 'pending'")) as {
       min: number | null;
     }[];
-    const [row] = rows;
     return row === undefined ? null : row.min;
   }
 
   // 同じ提案の二重追加（UNIQUE 違反）は 409、存在しない提案（外部キー違反）は 404（api.md §3）
   async insert(row: NewOptionRow): Promise<number> {
     try {
-      const rows = (await this.#db.query(
-        `INSERT INTO options (title, status, suggestion_id, sort_order, created_at, updated_at)
-         VALUES ($1, 'pending', $2, $3, $4, $4) RETURNING id`,
+      const [inserted] = (await this.#query(
+        `INSERT INTO options (user_id, title, status, suggestion_id, sort_order, created_at, updated_at)
+         VALUES ($1, $2, 'pending', $3, $4, $5, $5) RETURNING id`,
         [row.title, row.suggestionId, row.sortOrder, row.now],
       )) as IdRow[];
-      const [inserted] = rows;
       if (inserted === undefined) throw new Error("INSERT … RETURNING id が行を返さなかった");
       return inserted.id;
     } catch (error) {
@@ -132,26 +152,27 @@ export class OptionRepository implements OptionStore {
   // 列名は CHANGE_COLUMNS の決まった名前だけを並べ、値はプレースホルダで渡す
   async update(id: number, changes: OptionChanges): Promise<void> {
     const entries = Object.entries(changes).filter(([, value]) => value !== undefined);
-    const sets = entries.map(([key], i) => `${CHANGE_COLUMNS[key as keyof OptionChanges]} = $${i + 2}`);
-    await this.#db.query(`UPDATE options SET ${sets.join(", ")} WHERE id = $1`, [id, ...entries.map(([, value]) => value)]);
+    const sets = entries.map(([key], i) => `${CHANGE_COLUMNS[key as keyof OptionChanges]} = $${i + 3}`);
+    await this.#query(`UPDATE options SET ${sets.join(", ")} WHERE user_id = $1 AND id = $2`, [id, ...entries.map(([, value]) => value)]);
   }
 
   // 達成記録は外部キーの ON DELETE CASCADE で消える
   async delete(id: number): Promise<boolean> {
-    const rows = (await this.#db.query("DELETE FROM options WHERE id = $1 RETURNING id", [id])) as IdRow[];
+    const rows = (await this.#query("DELETE FROM options WHERE user_id = $1 AND id = $2 RETURNING id", [id])) as IdRow[];
     return rows.length > 0;
   }
 
   async photoFilenames(id: number): Promise<string[]> {
-    const rows = (await this.#db.query("SELECT photo_filename FROM achievements WHERE option_id = $1 AND photo_filename IS NOT NULL", [id])) as {
-      photo_filename: string;
-    }[];
+    const rows = (await this.#query(
+      "SELECT photo_filename FROM achievements WHERE user_id = $1 AND option_id = $2 AND photo_filename IS NOT NULL",
+      [id],
+    )) as { photo_filename: string }[];
     return rows.map((row) => row.photo_filename);
   }
 
   async pendingOrder(): Promise<SortOrderEntry[]> {
-    const rows = (await this.#db.query(
-      "SELECT id, sort_order FROM options WHERE status = 'pending' ORDER BY sort_order, id",
+    const rows = (await this.#query(
+      "SELECT id, sort_order FROM options WHERE user_id = $1 AND status = 'pending' ORDER BY sort_order, id",
     )) as { id: number; sort_order: number }[];
     return rows.map((row) => ({ id: row.id, sortOrder: row.sort_order }));
   }
@@ -159,10 +180,15 @@ export class OptionRepository implements OptionStore {
   // 1 本の UPDATE で書き換える。id と sort_order を同じ順の配列で渡し、array_position で引き当てる
   async setSortOrders(entries: SortOrderEntry[]): Promise<void> {
     if (entries.length === 0) return;
-    await this.#db.query(
-      `UPDATE options SET sort_order = ($2::integer[])[array_position($1::bigint[], id)] WHERE id = ANY($1::bigint[])`,
+    await this.#query(
+      `UPDATE options SET sort_order = ($3::integer[])[array_position($2::bigint[], id)] WHERE user_id = $1 AND id = ANY($2::bigint[])`,
       [entries.map((e) => e.id), entries.map((e) => e.sortOrder)],
     );
+  }
+
+  // $1 はいつもその人の user_id（null なら 1 行も当たらない）
+  #query(sql: string, params: unknown[] = []): Promise<unknown> {
+    return this.#tx.query(sql, [this.#userId, ...params]);
   }
 
   #translate(error: unknown): unknown {

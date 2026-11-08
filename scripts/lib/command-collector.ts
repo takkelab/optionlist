@@ -37,6 +37,15 @@ export const UNIT_SCOPES: UnitCoverageScope[] = [
 const AUDIT_DIRS = [".", "backend", "frontend"];
 // backend の npm run test:migrations が vitest の JSON レポーターで書き出す
 const MIGRATION_RESULTS = "backend/coverage/migrations/results.json";
+// backend の npm run test:coverage（UT ＋ API テスト）が同じ形で書き出す
+const BACKEND_RESULTS = "backend/coverage/all/results.json";
+// 他人のデータが見えないことの確かめ（testing.md §7）。分離テストのファイルと、RLS の付け忘れを数える describe
+const ISOLATION_TEST = "tests/api/isolation.test.ts";
+const RLS_TEST = "tests/migrations/rls.test.ts";
+const RLS_COVERAGE = "RLS coverage";
+
+type VitestAssertion = { ancestorTitles: string[]; status: string };
+type VitestResults = { numFailedTests: number; testResults: { name: string; assertionResults: VitestAssertion[] }[] };
 
 // コマンドを実行して測る指標（型、audit、テストとカバレッジ、ビルドと JS サイズ）。lint は lint-collector.ts
 export class CommandCollector implements MetricCollector {
@@ -56,14 +65,14 @@ export class CommandCollector implements MetricCollector {
   }
 
   collect(): CollectedMetrics {
-    const measurements: Measurement[] = [
-      this.#typeErrors(),
-      this.#auditHigh(),
-      ...this.#backendTests(),
-      this.#migrationTests(),
-      this.#unitCoverage(),
-      this.#bundleSize(),
-    ];
+    const measurements: Measurement[] = [this.#typeErrors(), this.#auditHigh()];
+    const backend = this.#run("backend テスト（UT ＋ API、カバレッジ）", "npm --prefix backend run -s test:coverage");
+    measurements.push(...this.#backendTests(backend.durationSec));
+    measurements.push(this.#failures("tenant-isolation-failures", BACKEND_RESULTS, ISOLATION_TEST, null, backend.ok));
+    const migrations = this.#run("マイグレーションテスト", "npm --prefix backend run -s test:migrations");
+    measurements.push(this.#migrationTests(migrations.ok));
+    measurements.push(this.#failures("rls-missing-tables", MIGRATION_RESULTS, RLS_TEST, RLS_COVERAGE, migrations.ok));
+    measurements.push(this.#unitCoverage(), this.#bundleSize());
     return { checks: this.#checks, measurements, findings: [] };
   }
 
@@ -95,9 +104,8 @@ export class CommandCollector implements MetricCollector {
     return { id: "audit-high", kind: "value", value: counts.reduce((sum, c) => sum + c.count, 0), detail };
   }
 
-  #backendTests(): Measurement[] {
-    const result = this.#run("backend テスト（UT ＋ API、カバレッジ）", "npm --prefix backend run -s test:coverage");
-    const duration: Measurement = { id: "backend-test-duration", kind: "value", value: result.durationSec };
+  #backendTests(durationSec: number): Measurement[] {
+    const duration: Measurement = { id: "backend-test-duration", kind: "value", value: durationSec };
     const summary = this.#coverage.read("backend/coverage/all/coverage-summary.json");
     if (summary === null) {
       const detail = "カバレッジが出ていない";
@@ -116,8 +124,7 @@ export class CommandCollector implements MetricCollector {
 
   // マイグレーションテストはマイグレーション 1 本ごとに up / down のケースがあるので、失敗したケース数を数える（testing.md §1）
   // コマンドが失敗したのに結果ファイルが古い・失敗 0 件のときも見逃さないよう、最低 1 件にする
-  #migrationTests(): Measurement {
-    const result = this.#run("マイグレーションテスト", "npm --prefix backend run -s test:migrations");
+  #migrationTests(ok: boolean): Measurement {
     if (!this.#files.exists(MIGRATION_RESULTS)) {
       return { id: "migration-test-failures", kind: "missing", detail: "テスト結果（JSON）が出ていない" };
     }
@@ -126,7 +133,24 @@ export class CommandCollector implements MetricCollector {
       numTotalTests: number;
     };
     if (numTotalTests === 0) return { id: "migration-test-failures", kind: "missing", detail: "テストが 0 件" };
-    return { id: "migration-test-failures", kind: "value", value: result.ok ? numFailedTests : Math.max(numFailedTests, 1) };
+    return { id: "migration-test-failures", kind: "value", value: ok ? numFailedTests : Math.max(numFailedTests, 1) };
+  }
+
+  // vitest の JSON の結果から、そのテストファイル（と describe）の失敗したケースを数える（metrics.md §2）
+  // ファイルがない・ケースが 0 件（テストが消えた、流れなかった）は missing にして見逃さない
+  // コマンドが失敗したのに結果に失敗が 1 件もないときは、vitest が流れる前に止まって前回の結果が残っているとみなし、missing にする
+  #failures(id: string, resultsPath: string, testFile: string, describe: string | null, commandOk: boolean): Measurement {
+    if (!this.#files.exists(resultsPath)) return { id, kind: "missing", detail: `${resultsPath} が出ていない` };
+    const { testResults = [], numFailedTests = 0 } = JSON.parse(this.#files.read(resultsPath)) as Partial<VitestResults>;
+    if (!commandOk && numFailedTests === 0) {
+      return { id, kind: "missing", detail: "テストのコマンドが失敗したのに結果に失敗がない（前回の結果が残っている）" };
+    }
+    const cases = testResults
+      .filter((file) => file.name.replaceAll("\\", "/").endsWith(testFile))
+      .flatMap((file) => file.assertionResults)
+      .filter((c) => describe === null || c.ancestorTitles.includes(describe));
+    if (cases.length === 0) return { id, kind: "missing", detail: `${testFile} のケースが 0 件` };
+    return { id, kind: "value", value: cases.filter((c) => c.status !== "passed").length };
   }
 
   #unitCoverage(): Measurement {

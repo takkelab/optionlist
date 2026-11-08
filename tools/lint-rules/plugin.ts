@@ -8,6 +8,7 @@ import { noStatic } from "./rules/no-static.ts";
 import { noTopLevelFunction } from "./rules/no-top-level-function.ts";
 import { noWideMock } from "./rules/no-wide-mock.ts";
 import { sharedTypesOnly } from "./rules/shared-types-only.ts";
+import { userScopedDb } from "./rules/user-scoped-db.ts";
 
 // architecture.md §2 の自作ルール。ルール名は rules/ のファイル名と同じにし、テストは tests/<ルール名>.test.ts に置く
 // （scripts/lib/lint-rule-test-checker.ts がこの対応でテストの有無を確かめる）
@@ -24,5 +25,6 @@ export default {
     "no-top-level-function": noTopLevelFunction,
     "no-wide-mock": noWideMock,
     "shared-types-only": sharedTypesOnly,
+    "user-scoped-db": userScopedDb,
   },
 };

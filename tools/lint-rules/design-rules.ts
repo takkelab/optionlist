@@ -17,5 +17,6 @@ export const DESIGN_RULES = {
   "design/no-double-cast": "error", // L10
   "design/import-shared-as-type": "error", // L12
   "design/shared-types-only": "off", // L12（shared/** だけで有効にする）
+  "design/user-scoped-db": "off", // L13（backend/src/** だけで有効にする）
   "no-restricted-imports": "off", // §3.1 の層の向き（backend/src の層ごとに oxlint.config.ts の overrides で有効にする）
 } satisfies NonNullable<OxlintConfig["rules"]>;

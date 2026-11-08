@@ -88,8 +88,8 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 
 ### R2. 匿名アカウントとデータの分離（docs/decisions/0033・0034・0046）
 - users・auth_attempts の表、options・achievements の `user_id`、(user_id, suggestion_id) の UNIQUE、複合外部キー、(user_id, …) のインデックス
-- ロール（`ol_migrator`・`ol_app`・`ol_cleanup`・`ol_metrics`・`ol_definer`）を作るスクリプト（`npm --prefix backend run db:roles` / `db:roles:test`）、RLS のポリシー、認証の関数（data.md §4）
-- `UserScopedDatabase` とセッションの middleware（Cookie、最初の `POST /api/options` でアカウントを作る、1 日 1 回の `last_seen_at`）。アカウントの作成の回数の制限
+- ロール（`ol_migrator`・`ol_app`・`ol_cleanup`・`ol_metrics`・`ol_definer`・`ol_incident`）を作るスクリプト（`npm --prefix backend run db:roles` / `db:roles:test`）、RLS のポリシー、認証の関数のうち `auth_find_user`・`auth_create_user`（data.md §4。`auth_restore` は R3。docs/decisions/0048）
+- `UserScopedDatabase` とセッションの middleware（Cookie、最初の `POST /api/options` でアカウントを作る、1 日 1 回の `last_seen_at`）。アカウントの作成の回数の制限。写真の配信で持ち主を確かめる（分離テストと `isolation.spec` に要るので R5 から前に出した。docs/decisions/0048）
 - lint の L13（`tools/lint-rules/rules/user-scoped-db.ts` とテスト）、マイグレーションの RLS のテスト、API の分離テスト（testing.md §7）、metrics.md §2 の 2 つの指標を `metrics.config.json` に足す
 - 性能用データを複数ユーザーにする（metrics.md §1）
 - 完了の条件
@@ -101,7 +101,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm run test:e2e -- isolation.spec` が通る（testing.md §5 の 11）
 
 ### R3. 復旧コードとすべてのデータを消す（docs/decisions/0033・0039）
-- `GET /api/account`・`POST /api/account/recovery-code`・`POST /api/account/restore`・`DELETE /api/account`（api.md §6）、復旧コードの入力の回数の制限
+- `GET /api/account`・`POST /api/account/recovery-code`・`POST /api/account/restore`・`DELETE /api/account`（api.md §6）、復旧コードの入力の回数の制限、認証の関数の `auth_restore`（data.md §4）
 - 設定のシート、復旧コードの表示・入力、控えるよう勧めるカード、すべてのデータを消す（screens.md §9）
 - 完了の条件
   - 共通の条件
@@ -120,7 +120,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm --prefix backend run test:file -- tests/unit/json-logger.test.ts` が通り、その中で Cookie・復旧コードを渡しても出力に含まれないことを確かめる
 
 ### R5. 写真を Cloud Storage へ（docs/decisions/0037）
-- `GcsPhotoFiles`（`PHOTO_BUCKET` があれば使う）、写真の配信で持ち主を確かめる、配信のヘッダー、sharp で作り直す、1 人あたりの上限と保存の回数の制限、`achievements.photo_bytes`
+- `GcsPhotoFiles`（`PHOTO_BUCKET` があれば使う）、`GcsPhotoFiles` での配信（持ち主の確かめと `private`・`Vary: Cookie` は R2 で入れた）、配信のそのほかのヘッダー（CSP・`Content-Disposition`）、sharp で作り直す、1 人あたりの上限と保存の回数の制限、`achievements.photo_bytes`
 - CI に fake-gcs-server のサービスコンテナを足し、`GcsPhotoFiles` を `LocalPhotoFiles` と同じテストで確かめる
 - 完了の条件
   - 共通の条件（`metrics:check` で、アップロードの p95 が 300ms 以内。超えたら新しい記録で目標を見直す）

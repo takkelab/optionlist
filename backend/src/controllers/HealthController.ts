@@ -1,6 +1,5 @@
-import type { IRouter } from "express";
 import type { HealthChecker } from "../services/HealthService";
-import type { Controller, JsonResponse } from "./http";
+import type { Controller, JsonResponse, Routes } from "./http";
 
 // GET /api/health（backend の疎通）と GET /api/health/db（DB の疎通。届かなければ 503）
 export class HealthController implements Controller {
@@ -10,7 +9,7 @@ export class HealthController implements Controller {
     this.#health = health;
   }
 
-  register(router: IRouter): void {
+  register(router: Routes): void {
     router.get("/api/health", (_req, res) => this.server(res));
     router.get("/api/health/db", (_req, res) => this.database(res));
   }

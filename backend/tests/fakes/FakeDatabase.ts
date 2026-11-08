@@ -1,7 +1,7 @@
-import type { Database } from "../../src/infra/PgDatabase";
+import type { Database, Queryable, UserScopedDatabase, UserScopes } from "../../src/infra/PgDatabase";
 
-// error を渡すと、すべての query がそのエラーで失敗する
-export class FakeDatabase implements Database {
+// error を渡すと、すべての query がそのエラーで失敗する。forUser の run も同じ口で流す
+export class FakeDatabase implements Database, UserScopes {
   readonly #error: Error | null;
   readonly #queries: string[] = [];
 
@@ -15,7 +15,23 @@ export class FakeDatabase implements Database {
     return [];
   }
 
+  forUser(_userId: number | null): UserScopedDatabase {
+    return new FakeTransaction(this);
+  }
+
   queries(): string[] {
     return this.#queries;
+  }
+}
+
+class FakeTransaction implements UserScopedDatabase {
+  readonly #db: Queryable;
+
+  constructor(db: Queryable) {
+    this.#db = db;
+  }
+
+  run<T>(fn: (tx: Queryable) => Promise<T>): Promise<T> {
+    return fn(this.#db);
   }
 }

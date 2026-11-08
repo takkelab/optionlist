@@ -5,22 +5,30 @@ import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
+import { TestUsers } from "../fakes/TestUsers";
 
 // POST・PATCH・DELETE /api/options、PUT /api/options/order（api.md §2、testing.md §2）
-const pool = new PgPoolFactory(process.env, console).create();
+// 前提の行は ol_migrator（pool）で入れ、アプリは ol_app（appPool）で動かす（testing.md §0）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 const data = new TestDatabase(pool);
-const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
+const users = new TestUsers(pool);
+const app = new TestApp({ db: new PgDatabase(appPool, new PromMetrics()) }).build();
 const VALIDATION_ERROR = { error: { code: "VALIDATION_ERROR" } };
 const NOT_FOUND = { error: { code: "NOT_FOUND" } };
 const PENDING = "?status=pending";
+// 各テストの人（reset で ID が 1 から振り直されるので、直接入れる行の user_id は 1）。beforeEach で Cookie を入れる
+const api = new OptionsApiClient(app);
 
 beforeEach(async () => {
   await data.reset();
+  const { cookie } = await users.create();
+  api.use(cookie);
 });
 
 afterAll(async () => {
   await data.reset();
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
 });
 
 describe("POST /api/options", () => {
@@ -134,7 +142,7 @@ describe("DELETE /api/options/:id", () => {
   it("deletes the option with its achievements", async () => {
     const { id } = await api.added("a");
     const other = await api.added("b");
-    await pool.query("INSERT INTO achievements (option_id, achieved_at) VALUES ($1, now()), ($2, now())", [id, other.id]);
+    await pool.query("INSERT INTO achievements (option_id, user_id, achieved_at) VALUES ($1, 1, now()), ($2, 1, now())", [id, other.id]);
 
     expect(await api.remove(id)).toMatchObject({ status: 204, text: "" });
     expect(await api.detail(id)).toMatchObject({ status: 404 });
@@ -162,8 +170,8 @@ describe("PUT /api/options/order", () => {
 
   it("renumbers every pending option when a moved one does not fit between its neighbours", async () => {
     await pool.query(
-      `INSERT INTO options (id, title, sort_order, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
-       (1, 'a', 1, now(), now()), (2, 'b', 2, now(), now()), (3, 'c', 3, now(), now())`,
+      `INSERT INTO options (id, user_id, title, sort_order, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES
+       (1, 1, 'a', 1, now(), now()), (2, 1, 'b', 2, now(), now()), (3, 1, 'c', 3, now(), now())`,
     );
     expect(await api.reorder({ ids: [1, 3, 2] })).toMatchObject({ status: 204 });
     expect(await api.titles(PENDING)).toEqual(["a", "c", "b"]);

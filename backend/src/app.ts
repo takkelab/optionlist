@@ -1,7 +1,7 @@
 import express from "express";
 import type { Express } from "express";
 import type { Server } from "node:http";
-import type { Controller } from "./controllers/http";
+import type { Controller, Routes } from "./controllers/http";
 import type { ErrorMiddleware, Middleware } from "./middleware/Middleware";
 
 export interface HttpApp {
@@ -12,6 +12,8 @@ export interface HttpApp {
 export type AppDeps = {
   controllers: Controller[];
   requestMetrics: Middleware;
+  // Cookie からそのリクエストの人を決める（api.md §6）
+  session: Middleware;
   notFound: Middleware;
   errorHandler: ErrorMiddleware;
 };
@@ -21,12 +23,14 @@ export type AppDeps = {
 export class ExpressApp implements HttpApp {
   readonly #controllers: Controller[];
   readonly #requestMetrics: Middleware;
+  readonly #session: Middleware;
   readonly #notFound: Middleware;
   readonly #errorHandler: ErrorMiddleware;
 
   constructor(deps: AppDeps) {
     this.#controllers = deps.controllers;
     this.#requestMetrics = deps.requestMetrics;
+    this.#session = deps.session;
     this.#notFound = deps.notFound;
     this.#errorHandler = deps.errorHandler;
   }
@@ -35,12 +39,18 @@ export class ExpressApp implements HttpApp {
     const app = express();
     app.use(this.#requestMetrics.handler());
     app.use(express.json({ limit: "1mb" }));
-    for (const controller of this.#controllers) {
-      controller.register(app);
-    }
+    app.use(this.#session.handler());
+    this.routes(app);
     app.use("/api", this.#notFound.handler());
     app.use(this.#errorHandler.handler());
     return app;
+  }
+
+  // すべての controllers のルートを router に登録する。分離テスト（testing.md §7）は記録用のフェイクを渡して、ルートの一覧を集める
+  routes(router: Routes): void {
+    for (const controller of this.#controllers) {
+      controller.register(router);
+    }
   }
 
   // 待ち受けを始めたら resolve、ポートが使えないなど（EADDRINUSE）は reject

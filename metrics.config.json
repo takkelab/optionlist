@@ -17,6 +17,8 @@
     { "id": "backend-test-duration", "section": "§2", "label": "backend テストの実行時間", "op": "max", "target": 60, "unit": "秒", "judge": "warn", "since": "1a" },
     { "id": "e2e-test-duration", "section": "§2", "label": "E2E テストの実行時間", "op": "max", "target": 180, "unit": "秒", "judge": "warn", "since": "4" },
     { "id": "flaky-tests", "section": "§2", "label": "不安定なテスト（リトライなしで失敗）", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "4" },
+    { "id": "tenant-isolation-failures", "section": "§2", "label": "他人のデータが見えること（分離テストの失敗。ケースの表にないルートも 1 件）", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "R2" },
+    { "id": "rls-missing-tables", "section": "§2", "label": "RLS の付け忘れ（RLS・強制・ポリシー・user_id のどれかが欠けている表）", "op": "max", "target": 0, "unit": "表", "judge": "fail", "since": "R2" },
 
     { "id": "color-tokens", "section": "§3", "label": "使っている色の数（tokens.css。装飾の色を除く）", "op": "max", "target": 12, "unit": "色", "judge": "fail", "since": "1a" },
     { "id": "deco-color-tokens", "section": "§3", "label": "装飾の色の数（tokens.css の --deco-*）", "op": "max", "target": 10, "unit": "色", "judge": "fail", "since": "7b" },
