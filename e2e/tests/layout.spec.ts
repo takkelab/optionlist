@@ -2,12 +2,12 @@ import { expect, test } from '@playwright/test'
 import { LayoutProbe } from '../support/LayoutProbe'
 import { OptionSeed } from '../support/OptionSeed'
 import { SuggestionData, SuggestionsScreen } from '../support/SuggestionsScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §1（docs/decisions/0024）: 広い画面では中身を 960px までの列にして中央に置き、タブバー・「＋」も列に合わせる。
 // 提案のテーマの色（--theme-color）がカードと行に付く
-const data = new MySqlTestData()
+const data = new PgTestData()
 const PC = { width: 1280, height: 800 }
 const COLUMN = 960
 const COLUMN_LEFT = (PC.width - COLUMN) / 2

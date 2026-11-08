@@ -3,11 +3,11 @@ import { ConsultText } from '../support/ConsultText'
 import { OptionSeed } from '../support/OptionSeed'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
 import { PlanDates } from '../support/PlanDates'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §3: カードから開く項目のシート（タイトル・予定日のカレンダー・AI に相談・削除）。testing.md §5 のシナリオ 1・7
-const data = new MySqlTestData()
+const data = new PgTestData()
 const dates = new PlanDates()
 const texts = new ConsultText()
 

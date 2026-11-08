@@ -7,15 +7,15 @@ import { after, before, describe, it } from "node:test";
 // RuleTester ではなく、実際の層のフォルダに一時ファイルを置いて oxlint を 1 回だけ流す（docs/decisions/0007）
 const cases: [dir: string, source: string, restricted: boolean][] = [
   ["backend/src/controllers", 'import type { HealthStore } from "../repositories/HealthRepository";', true],
-  ["backend/src/controllers", 'import type { Database } from "../infra/MySqlDatabase";', true],
+  ["backend/src/controllers", 'import type { Database } from "../infra/PgDatabase";', true],
   ["backend/src/controllers", 'import type { HealthChecker } from "../services/HealthService";', false],
   ["backend/src/services", 'import type { Controller } from "../controllers/http";', true],
   ["backend/src/repositories", 'import type { HealthChecker } from "../services/HealthService";', true],
-  ["backend/src/repositories", 'import type { Database } from "../infra/MySqlDatabase";', false],
+  ["backend/src/repositories", 'import type { Database } from "../infra/PgDatabase";', false],
   ["backend/src/infra", 'import type { HealthStore } from "../repositories/HealthRepository";', true],
   ["backend/src/middleware", 'import type { HealthChecker } from "../services/HealthService";', true],
   ["backend/src/middleware", 'import { AppError } from "../services/errors";', false],
-  ["backend/src/metrics", 'import type { Database } from "../infra/MySqlDatabase";', true],
+  ["backend/src/metrics", 'import type { Database } from "../infra/PgDatabase";', true],
   ["frontend/src/features/options", 'import type { OptionsApi } from "../../api/client";', true],
   ["frontend/src/features/options", 'import axios from "axios";', true],
   ["frontend/src/features/options", 'import { useOptionsApi } from "../../app/hooks";', false],

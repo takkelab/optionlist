@@ -14,10 +14,8 @@ export interface OptionInputParser {
 const STATUSES: readonly unknown[] = ["pending", "completed"] satisfies OptionStatus[];
 const TITLE_MAX = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-// MySQL の DATE に入るのは 1000〜9999 年（4 桁なので文字列のまま比べられる）
+// 受ける年は 1000〜9999 年（4 桁なので文字列のまま比べられる。DB の date はもっと広いが、API の範囲は変えない）
 const DATE_MIN = "1000-01-01";
-// suggestions.id は INT UNSIGNED。これを超える ID の行は存在しない（SQL に渡すと範囲外のエラーになる）
-const SUGGESTION_ID_MAX = 4_294_967_295;
 
 // options の API の入力検証（api.md §3、data.md §3）。違反は 400 VALIDATION_ERROR
 export class OptionInput implements OptionInputParser {
@@ -84,9 +82,9 @@ export class OptionInput implements OptionInputParser {
     return value;
   }
 
+  // suggestions.id は BIGINT なので、safe integer ならどれも SQL に渡せる（ない ID は外部キー違反で 404）
   #suggestionId(value: unknown): number {
     if (!this.#isPositiveInteger(value)) throw this.#invalid("suggestionId は提案の ID（正の整数）");
-    if (value > SUGGESTION_ID_MAX) throw new AppError("NOT_FOUND", "提案が見つからない");
     return value;
   }
 

@@ -1,4 +1,4 @@
-import type { Database } from "../infra/MySqlDatabase";
+import type { Database } from "../infra/PgDatabase";
 
 export interface HealthStore {
   ping(): Promise<void>;

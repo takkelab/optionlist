@@ -3,12 +3,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
-import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Achievement, Option } from "../../../shared/types";
 import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
-import { MySqlDatabase } from "../../src/infra/MySqlDatabase";
-import { MySqlPoolFactory } from "../../src/infra/MySqlPoolFactory";
+import { PgDatabase } from "../../src/infra/PgDatabase";
+import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { BackendProcess, NODE_FLAGS } from "../fakes/BackendProcess";
 import { CountingDatabase } from "../fakes/CountingDatabase";
@@ -24,7 +23,7 @@ import { TestApp } from "../fakes/TestApp";
 const RESULTS_PATH = "coverage/perf/results.json";
 const RUNS = 100;
 const MEMORY_RUNS = 1_000;
-// 性能用データの先頭の option はリンクが上限（200 件）まで付いている（db/perf-data/PerfDataGenerator.ts）
+// 性能用データの先頭の option（db/perf-data/PerfDataGenerator.ts）
 const HEAVIEST_OPTION = 1;
 // 「ひとりで」（いちばん多くの提案に付いたタグ）を持つ提案。関連の候補がいちばん多くなる
 const HEAVIEST_SUGGESTION = 5;
@@ -42,8 +41,8 @@ const PHOTO_RUNS = 20;
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1024 * 1024 - 4)]);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-perf-photos-"));
 
-const pool = new MySqlPoolFactory(process.env).create();
-const db = new CountingDatabase(new MySqlDatabase(pool, new PromMetrics()));
+const pool = new PgPoolFactory(process.env, console).create();
+const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
 const results = new PerfResults();
 const percentile = new NearestRankPercentile();
 const scanFinder = new FullScanFinder(MASTER_TABLES);
@@ -66,7 +65,7 @@ afterAll(async () => {
 
 describe("backend performance with the metrics.md §1 data", () => {
   it("has the perf data loaded", async () => {
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS n FROM options");
+    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM options");
     expect(rows).toEqual([{ n: 1000 }]);
   });
 
@@ -200,12 +199,22 @@ describe("backend performance with the metrics.md §1 data", () => {
       .slice(0, 3);
     const slowDetail = slowest.map((s) => `${s.p95}ms: ${s.sql}`).join(" / ");
     results.record({ id: "sql-p95", value: percentile.p95(db.durationsMs()), detail: `遅い順: ${slowDetail}` });
-    // INSERT は表を読まないのに EXPLAIN が type = ALL を返すので、読む SQL（SELECT・UPDATE・DELETE）だけを見る
+    // 小さい表では、索引があっても全部読むほうが速いと見て Seq Scan を選ぶ。そこで enable_seqscan = off にして、
+    // それでも Seq Scan になる（索引では読めない）ものだけを数える（docs/decisions/0047）。EXPLAIN は SQL を実行しない
     const scans: string[] = [];
-    for (const { sql, params } of db.statements().filter((s) => !/^\s*INSERT\b/i.test(s.sql))) {
-      const [plan] = await pool.query<RowDataPacket[]>(`EXPLAIN ${sql}`, params);
-      const full = scanFinder.fullScans(sql, plan);
-      if (full.length > 0) scans.push(`${full.join("・")}: ${short(sql)}`);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL enable_seqscan = off");
+      for (const { sql, params } of db.statements()) {
+        const { rows } = await client.query(`EXPLAIN (FORMAT JSON) ${sql}`, params);
+        const [row] = rows;
+        const full = scanFinder.fullScans(row?.["QUERY PLAN"]);
+        if (full.length > 0) scans.push(`${full.join("・")}: ${short(sql)}`);
+      }
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
     }
     results.record({ id: "full-table-scans", value: scans.length, detail: scans.join(" / ") || undefined });
   });

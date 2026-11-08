@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { OptionSeed } from '../support/OptionSeed'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §3 の項目のシートの閉じ方（外・Esc・下へのスワイプ。docs/decisions/0016・0017）
-const data = new MySqlTestData()
+const data = new PgTestData()
 
 test.beforeEach(async () => {
   await data.reset()

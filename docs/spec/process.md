@@ -74,7 +74,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - CLAUDE.md の Commands・Gotchas が、そのステップのあとのやり方に合っていること
 
 ### R1. Postgres に移る（docs/decisions/0034・0044）
-- 先に、手元の MySQL のダンプと `backend/uploads/` をリポジトリの外に残す（docs/decisions/0044）。提案のマスターデータを `backend/tests/migrations/fixtures/suggestions-mysql-final.json` に書き出す（MySQL を消す前に 1 回だけ）
+- 提案のマスターデータを `backend/tests/migrations/fixtures/suggestions-mysql-final.json` に書き出す（MySQL の最後の提案のマイグレーションの INSERT から作る。手元の MySQL は別の PC にあるので、ダンプと `backend/uploads/` の保存はここではしない。docs/decisions/0044・0047）
 - `pg` に乗り換え、MySQL の 13 本のマイグレーションを、Postgres の基準のマイグレーション 1 本にまとめ直す（ユーザーはまだ足さない。表の形は今のまま、型だけ data.md §1 に合わせる）
 - `?` を `$1` に、`INSERT … SET ?` を列を並べる形に、エラーコードを SQLSTATE（`23505`・`23503`）に直す。`date` を文字列のまま受ける。接続ごとに `TimeZone=UTC`
 - CI のサービスコンテナを `postgres:17` に。マイグレーション・性能のテストを Postgres 向けに（`EXPLAIN` の `Seq Scan`）

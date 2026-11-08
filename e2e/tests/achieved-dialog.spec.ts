@@ -3,11 +3,11 @@ import { CompletionScreen } from '../support/CompletionScreen'
 import { NetworkConditions } from '../support/NetworkConditions'
 import { OptionSeed } from '../support/OptionSeed'
 import { OptionSheetScreen } from '../support/OptionSheetScreen'
-import { MySqlTestData } from '../support/TestData'
+import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // screens.md §4: 🎉 のあとの移動の確認（写真の枠つき）。docs/decisions/0029
-const data = new MySqlTestData()
+const data = new PgTestData()
 
 test.beforeEach(async () => {
   await data.reset()

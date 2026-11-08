@@ -1,14 +1,14 @@
-import type { Pool } from "mysql2/promise";
+import type { Pool } from "pg";
 
 export interface DataReset {
   reset(): Promise<void>;
 }
 
-// マスターデータ（themes・tags・suggestions・suggestion_tags）以外のテーブル。子のテーブルから並べる
+// マスターデータ（themes・tags・suggestions・suggestion_tags）以外のテーブル
 const DATA_TABLES = ["achievements", "events", "options"];
 
 // API テストの前にテスト用 DB のデータを空にする（testing.md §2）。マスターデータは残す
-// FOREIGN_KEY_CHECKS は接続ごとの設定なので、1 本の接続で TRUNCATE する
+// 外部キーでつながった表は 1 本の TRUNCATE にまとめて消す。ID も 1 から振り直す（テストが ID に頼れるように）
 export class TestDatabase implements DataReset {
   readonly #pool: Pool;
 
@@ -17,16 +17,6 @@ export class TestDatabase implements DataReset {
   }
 
   async reset(): Promise<void> {
-    const connection = await this.#pool.getConnection();
-    try {
-      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
-      for (const table of DATA_TABLES) {
-        await connection.query("TRUNCATE TABLE ??", [table]);
-      }
-      await connection.query("SET FOREIGN_KEY_CHECKS = 1");
-    } finally {
-      // FK チェックを止めたまま pool に戻さないよう、途中で失敗した接続は捨てる
-      connection.destroy();
-    }
+    await this.#pool.query(`TRUNCATE TABLE ${DATA_TABLES.join(", ")} RESTART IDENTITY`);
   }
 }

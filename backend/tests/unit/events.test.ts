@@ -38,7 +38,7 @@ describe("EventsController and EventInput", () => {
     expect(store.saved()).toHaveLength(50);
   });
 
-  it("accepts the first and last moments of the years MySQL can store", async () => {
+  it("accepts the first and last moments of the years the API accepts (1000-9999)", async () => {
     const events = ["1000-01-01T00:00:00Z", "9999-12-31T23:59:59.999Z"].map((occurredAt) => ({ ...ERROR, occurredAt }));
     await controller.create({ events }, new FakeResponse());
     expect(store.saved()).toHaveLength(2);

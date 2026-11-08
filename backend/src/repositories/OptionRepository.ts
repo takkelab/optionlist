@@ -1,5 +1,5 @@
 import type { Option, OptionDetail, OptionStatus } from "../../../shared/types";
-import type { Database } from "../infra/MySqlDatabase";
+import type { Database } from "../infra/PgDatabase";
 import { AppError } from "../services/errors";
 import type { AchievementRow, OptionRow, RowMapper } from "./OptionRowMapper";
 
@@ -34,10 +34,24 @@ export interface OptionStore {
   setSortOrders(entries: SortOrderEntry[]): Promise<void>;
 }
 
-type WriteResult = { insertId: number; affectedRows: number };
+type IdRow = { id: number };
 
-// 達成回数は achievements の件数から求める（data.md §2）
-const OPTION_COLUMNS = `o.id, o.title, o.status, o.suggestion_id, DATE_FORMAT(o.planned_on, '%Y-%m-%d') AS planned_on,
+// UPDATE で書き換えてよい列（OptionChanges のキー → 列名）。値はプレースホルダで渡す
+const CHANGE_COLUMNS: Record<keyof OptionChanges, string> = {
+  title: "title",
+  status: "status",
+  plannedOn: "planned_on",
+  completedAt: "completed_at",
+  sortOrder: "sort_order",
+  updatedAt: "updated_at",
+};
+
+// SQLSTATE（https://www.postgresql.org/docs/17/errcodes-appendix.html）
+const UNIQUE_VIOLATION = "23505";
+const FOREIGN_KEY_VIOLATION = "23503";
+
+// 達成回数は achievements の件数から求める（data.md §2）。planned_on は pg が 2026-11-23 の文字列で返す（infra/PgPoolFactory.ts）
+const OPTION_COLUMNS = `o.id, o.title, o.status, o.suggestion_id, o.planned_on,
   o.completed_at, o.created_at, o.updated_at,
   (SELECT COUNT(*) FROM achievements a WHERE a.option_id = o.id) AS achievement_count,
   (SELECT a.photo_filename FROM achievements a WHERE a.option_id = o.id AND a.photo_filename IS NOT NULL
@@ -67,7 +81,7 @@ export class OptionRepository implements OptionStore {
   }
 
   async find(id: number): Promise<Option | null> {
-    const rows = (await this.#db.query(`SELECT ${OPTION_COLUMNS} FROM options o WHERE o.id = ?`, [id])) as OptionRow[];
+    const rows = (await this.#db.query(`SELECT ${OPTION_COLUMNS} FROM options o WHERE o.id = $1`, [id])) as OptionRow[];
     const [row] = rows;
     return row === undefined ? null : this.#mapper.option(row);
   }
@@ -75,13 +89,13 @@ export class OptionRepository implements OptionStore {
   // 提案から追加した項目は、追加元の提案の最初の一歩も付ける（screens.md §3）
   async findDetail(id: number): Promise<OptionDetail | null> {
     const rows = (await this.#db.query(
-      `SELECT ${OPTION_COLUMNS}, s.first_step FROM options o LEFT JOIN suggestions s ON s.id = o.suggestion_id WHERE o.id = ?`,
+      `SELECT ${OPTION_COLUMNS}, s.first_step FROM options o LEFT JOIN suggestions s ON s.id = o.suggestion_id WHERE o.id = $1`,
       [id],
     )) as (OptionRow & { first_step: string | null })[];
     const [row] = rows;
     if (row === undefined) return null;
     const achievements = (await this.#db.query(
-      "SELECT id, option_id, achieved_at, photo_filename FROM achievements WHERE option_id = ? ORDER BY achieved_at, id",
+      "SELECT id, option_id, achieved_at, photo_filename FROM achievements WHERE option_id = $1 ORDER BY achieved_at, id",
       [id],
     )) as AchievementRow[];
     return {
@@ -101,44 +115,35 @@ export class OptionRepository implements OptionStore {
 
   // 同じ提案の二重追加（UNIQUE 違反）は 409、存在しない提案（外部キー違反）は 404（api.md §3）
   async insert(row: NewOptionRow): Promise<number> {
-    const values = {
-      title: row.title,
-      status: "pending",
-      suggestion_id: row.suggestionId,
-      sort_order: row.sortOrder,
-      created_at: row.now,
-      updated_at: row.now,
-    };
     try {
-      const result = (await this.#db.query("INSERT INTO options SET ?", [values])) as WriteResult;
-      return result.insertId;
+      const rows = (await this.#db.query(
+        `INSERT INTO options (title, status, suggestion_id, sort_order, created_at, updated_at)
+         VALUES ($1, 'pending', $2, $3, $4, $4) RETURNING id`,
+        [row.title, row.suggestionId, row.sortOrder, row.now],
+      )) as IdRow[];
+      const [inserted] = rows;
+      if (inserted === undefined) throw new Error("INSERT … RETURNING id が行を返さなかった");
+      return inserted.id;
     } catch (error) {
       throw this.#translate(error);
     }
   }
 
+  // 列名は CHANGE_COLUMNS の決まった名前だけを並べ、値はプレースホルダで渡す
   async update(id: number, changes: OptionChanges): Promise<void> {
-    const values = Object.fromEntries(
-      Object.entries({
-        title: changes.title,
-        status: changes.status,
-        planned_on: changes.plannedOn,
-        completed_at: changes.completedAt,
-        sort_order: changes.sortOrder,
-        updated_at: changes.updatedAt,
-      }).filter(([, value]) => value !== undefined),
-    );
-    await this.#db.query("UPDATE options SET ? WHERE id = ?", [values, id]);
+    const entries = Object.entries(changes).filter(([, value]) => value !== undefined);
+    const sets = entries.map(([key], i) => `${CHANGE_COLUMNS[key as keyof OptionChanges]} = $${i + 2}`);
+    await this.#db.query(`UPDATE options SET ${sets.join(", ")} WHERE id = $1`, [id, ...entries.map(([, value]) => value)]);
   }
 
   // 達成記録は外部キーの ON DELETE CASCADE で消える
   async delete(id: number): Promise<boolean> {
-    const result = (await this.#db.query("DELETE FROM options WHERE id = ?", [id])) as WriteResult;
-    return result.affectedRows > 0;
+    const rows = (await this.#db.query("DELETE FROM options WHERE id = $1 RETURNING id", [id])) as IdRow[];
+    return rows.length > 0;
   }
 
   async photoFilenames(id: number): Promise<string[]> {
-    const rows = (await this.#db.query("SELECT photo_filename FROM achievements WHERE option_id = ? AND photo_filename IS NOT NULL", [id])) as {
+    const rows = (await this.#db.query("SELECT photo_filename FROM achievements WHERE option_id = $1 AND photo_filename IS NOT NULL", [id])) as {
       photo_filename: string;
     }[];
     return rows.map((row) => row.photo_filename);
@@ -151,18 +156,19 @@ export class OptionRepository implements OptionStore {
     return rows.map((row) => ({ id: row.id, sortOrder: row.sort_order }));
   }
 
-  // 1 本の UPDATE で書き換える（CASE の WHEN は件数分のプレースホルダ）
+  // 1 本の UPDATE で書き換える。id と sort_order を同じ順の配列で渡し、array_position で引き当てる
   async setSortOrders(entries: SortOrderEntry[]): Promise<void> {
     if (entries.length === 0) return;
-    const cases = entries.map(() => "WHEN ? THEN ?").join(" ");
-    const params = [...entries.flatMap((e) => [e.id, e.sortOrder]), entries.map((e) => e.id)];
-    await this.#db.query(`UPDATE options SET sort_order = CASE id ${cases} END WHERE id IN (?)`, params);
+    await this.#db.query(
+      `UPDATE options SET sort_order = ($2::integer[])[array_position($1::bigint[], id)] WHERE id = ANY($1::bigint[])`,
+      [entries.map((e) => e.id), entries.map((e) => e.sortOrder)],
+    );
   }
 
   #translate(error: unknown): unknown {
     const code = error instanceof Error && "code" in error ? error.code : undefined;
-    if (code === "ER_DUP_ENTRY") return new AppError("CONFLICT", "この提案はすでに追加されている");
-    if (code === "ER_NO_REFERENCED_ROW_2") return new AppError("NOT_FOUND", "提案が見つからない");
+    if (code === UNIQUE_VIOLATION) return new AppError("CONFLICT", "この提案はすでに追加されている");
+    if (code === FOREIGN_KEY_VIOLATION) return new AppError("NOT_FOUND", "提案が見つからない");
     return error;
   }
 }

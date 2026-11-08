@@ -77,3 +77,4 @@
 | [0044](0044-no-data-migration.md) | 今の個人の MySQL のデータは本番に移さず、本番は空から始める | 確定 |
 | [0045](0045-staged-launch.md) | 公開は「自分だけで 2 週間 → 知人数人 → 一般公開」の 3 段階で進める | 確定 |
 | [0046](0046-tenant-isolation-checks.md) | 他人のデータが見えないことを、lint・マイグレーションのテスト・API のテストで機械的に確かめる | 確定 |
+| [0047](0047-postgres-baseline-details.md) | Postgres に移るときの細部（fixture の作り方、フルテーブルスキャンの数え方、ID の上限） | 確定 |

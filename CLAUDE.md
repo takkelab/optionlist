@@ -3,11 +3,11 @@
 - 仕様を変えたら、SPEC を直したうえで docs/decisions/ に理由を記録する（docs/spec/process.md §3）
 - docs/reference/OptionList_Specification_v2.1.md は旧構想（LocalStorage 前提の単体 Web アプリ）。
   参考にするのは「やりたいこと（機能・UX）」だけ。技術選定（LocalStorage, react-beautiful-dnd, React 18, Copilot 前提など）は決定事項ではない
-- 方針: React(frontend) → axios → Express(backend) → MySQL の構成で作る
+- 方針: React(frontend) → axios → Express(backend) → PostgreSQL 17（pg）の構成で作る（MySQL からは R1 で移った。docs/decisions/0034・0047）
 
 # Commands
-- 初回: `npm install` / `npm --prefix backend install` / `npm --prefix frontend install` / `npx playwright install chromium`（E2E のブラウザ）
-- DB 作成: `backend/.env.example` を `backend/.env` にコピーして `DATABASE_URL` を入れ、`npm --prefix backend run db:migrate`（DB がなければ作る。`db/schema.sql` も書き出す）。`schema.sql` を mysql に流し込む手順は使わない
+- 初回: `npm install` / `npm --prefix backend install` / `npm --prefix frontend install` / `npx playwright install chromium`（E2E のブラウザ）。PostgreSQL 17 は `winget install PostgreSQL.PostgreSQL.17`（superuser の `postgres` のパスワードを決める。`.env.example` は `postgres` の前提）
+- DB 作成: `backend/.env.example` を `backend/.env` にコピーして `DATABASE_URL` を入れ、`npm --prefix backend run db:migrate`（DB がなければ作る。`db/schema.sql` も書き出す）。`schema.sql` を psql に流し込む手順は使わない
 - テスト用 DB: `backend/.env.test.example` を `backend/.env.test` にコピーして `DATABASE_URL` を入れる。`npm test` が最初にマイグレーションする（DB も作る）
 - マイグレーションの追加: `npm --prefix backend run db:new -- <名前>` → `backend/db/migrations/` に up / down を書き、`tests/migrations/migrations.test.ts` を直す
 - 性能用データ: `npm --prefix backend run db:perf-data`（`.env.test` の DB に入れる。名前が `_test` で終わる DB 以外では止まる）
@@ -29,6 +29,8 @@
 - off-jt の backend も 8000 番を使う。Windows では別アプリが使っていても listen が成功してしまうので、backend は起動時に接続して確かめ、使用中ならメッセージを出して止まる（docs/decisions/0007）
 - TypeScript は 7 系（ネイティブ版）。古い記事の tsconfig オプションがそのまま使えないことがある
 - 開発環境は Windows。シェルコマンドは Git Bash / PowerShell どちらでも動く書き方にする
+- winget で入れた PostgreSQL は bin（`C:\Program Files\PostgreSQL\17\bin`）が PATH に入らない。`db:migrate` の `schema.sql` の書き出しは pg_dump を使うので、PATH に足して VS Code を再起動する。Claude のサンドボックスの中では dbmate がリポジトリに書けない（Access is denied）ので、`--schema-file` で一時フォルダに書き出してからコピーする
+- 手元の PostgreSQL のサーバーの TimeZone は Asia/Tokyo。backend とテストは接続ごとに UTC にしている（`PgPoolFactory`）ので、psql で直接見た日時は 9 時間ずれて見える
 - テスト用 DB を使うコマンド（`npm test`・`test:e2e`・`test:perf`・`metrics:check`・`test:scripts`）は同時に流さない。`test:scripts` はマイグレーションしないので、先に `npm --prefix backend run db:migrate:test`。`metrics:check` は性能用データを入れ直すので、裏で流している間に E2E を流すと互いに壊れる（docs/harness/incidents.md #15）
 - `dev:lan` は信頼できる Wi-Fi でだけ使う。ログインがないので、同じ Wi-Fi の人から達成の写真が見え、変えられる（docs/decisions/0028）
 - 手元の性能テストの値は CI より大きく出る（SQL で 6 倍ほど。SQL の p95 が手元だけ目標を超えることがある）。悪化かどうかは、手元の値ではなく CI の `metrics-report.json` と比べる（docs/harness/incidents.md #13）。手元で性能テストを続けて流すと、2 回目以降が RSS・ヒープのテストの 120 秒のタイムアウトで落ちる（main でも起きる。原因は不明）。`metrics:check` の測り直しもこれで落ちるので、それだけなら自分の変更を疑わず CI で確かめる（#16）

@@ -1,5 +1,5 @@
 import type { SuggestionCatalog, SuggestionSummary, Tag, Theme } from "../../../shared/types";
-import type { Database } from "../infra/MySqlDatabase";
+import type { Database } from "../infra/PgDatabase";
 import type { SuggestionMapper, SuggestionSummaryRow } from "./SuggestionRowMapper";
 
 // 提案 1 件のうち、関連を除いたもの
@@ -17,7 +17,7 @@ export interface SuggestionStore {
 
 // 提案から追加した option の状態は LEFT JOIN で付け、タグの ID は相関サブクエリでまとめて読む（N+1 にしない）
 const SUMMARY_COLUMNS = `s.id, s.hook, s.title, s.size, s.season_from, s.season_to, s.theme_id, o.status AS option_status,
-  (SELECT GROUP_CONCAT(st.tag_id ORDER BY st.tag_id) FROM suggestion_tags st WHERE st.suggestion_id = s.id) AS tag_ids`;
+  (SELECT string_agg(st.tag_id::text, ',' ORDER BY st.tag_id) FROM suggestion_tags st WHERE st.suggestion_id = s.id) AS tag_ids`;
 const WITH_OPTION = "suggestions s LEFT JOIN options o ON o.suggestion_id = s.id";
 
 type BodyRow = SuggestionSummaryRow & { trivia: string; first_step: string; option_id: number | null };
@@ -41,13 +41,13 @@ export class SuggestionRepository implements SuggestionStore {
   }
 
   async find(id: number): Promise<SuggestionBody | null> {
-    const rows = (await this.#db.query(`SELECT ${SUMMARY_COLUMNS}, s.trivia, s.first_step, o.id AS option_id FROM ${WITH_OPTION} WHERE s.id = ?`, [
+    const rows = (await this.#db.query(`SELECT ${SUMMARY_COLUMNS}, s.trivia, s.first_step, o.id AS option_id FROM ${WITH_OPTION} WHERE s.id = $1`, [
       id,
     ])) as BodyRow[];
     const [row] = rows;
     if (row === undefined) return null;
     const tags = (await this.#db.query(
-      "SELECT t.id, t.name FROM suggestion_tags st JOIN tags t ON t.id = st.tag_id WHERE st.suggestion_id = ? ORDER BY t.id",
+      "SELECT t.id, t.name FROM suggestion_tags st JOIN tags t ON t.id = st.tag_id WHERE st.suggestion_id = $1 ORDER BY t.id",
       [id],
     )) as Tag[];
     return { ...this.#mapper.summary(row), trivia: row.trivia, firstStep: row.first_step, tags, optionId: row.option_id };
@@ -59,7 +59,7 @@ export class SuggestionRepository implements SuggestionStore {
          FROM suggestion_tags mine
          JOIN suggestion_tags other ON other.tag_id = mine.tag_id AND other.suggestion_id <> mine.suggestion_id
          JOIN ${WITH_OPTION} ON s.id = other.suggestion_id
-        WHERE mine.suggestion_id = ?
+        WHERE mine.suggestion_id = $1
         GROUP BY s.id, o.status`,
       [id],
     )) as CandidateRow[];
