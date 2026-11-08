@@ -158,6 +158,7 @@
 
 - 本番で中身を見るのは障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに `ol_incident` を付け（`GRANT ol_incident TO <IAM のユーザー>`）、終わったらすぐ外す（`REVOKE`）。付けた・外したことは Cloud Audit Logs に残り、日付と理由を `docs/ops/data-access.md` に書く。IAM の管理用ユーザーそのものには、利用者の表のポリシーを付けない（ふだんは 0 行しか見えない）
 - `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer`・`ol_incident` だけ（testing.md §7 で確かめる）
+- `ol_migrator` は `ol_definer` のメンバーにする。ただし `GRANT ol_definer TO ol_migrator WITH INHERIT FALSE, SET TRUE`（権限は引き継がず、`SET ROLE` だけができる）にする。マイグレーションで関数とビューを作り、持ち主を `ol_definer` に移す（`ALTER FUNCTION/VIEW … OWNER TO ol_definer`）・作り直すには、PostgreSQL 16 以降では `SET ROLE` できることが要るため。強いロールへのメンバーシップの例外はこれと、ロールを作ったユーザーに自動で付く ADMIN だけ（testing.md §7）
 - `ol_app` は、ほかの `ol_*` ロールのメンバーにしない（ポリシーは `TO` に書いたロールのメンバーにも効くので、メンバーになると全員の行が見える。PostgreSQL 16 からは、ロールを作ったロールに自動でメンバーシップが付くことがあるので、`ol_*` を作るのは `ol_app` 以外のロールで行う）
 
 ### RLS
