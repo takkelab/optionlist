@@ -1,0 +1,48 @@
+/* ヘッダーの真ん中に置く、2 つに分かれたボタン（セグメント）。選んでいる側を白く浮かせ、見出しの役目もする */
+.switch {
+  flex: 1;
+  max-width: 320px;
+  position: relative;
+  display: flex;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+}
+
+.segment {
+  flex: 1;
+  min-height: var(--tap-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  /* 白い印（.pill）より上に出す */
+  position: relative;
+}
+
+.active {
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  font-weight: bold;
+}
+
+/* 選んでいる側の白い印。文字とは別の部品にして、切り替えたときは背景だけが前の位置から滑って移る
+   （文字ごと動かすと、前後の文字が重なって二重に見える。global.css）。左（やりたいこと）に置き、やったことでは右へ寄せる */
+.pill {
+  position: absolute;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  left: var(--space-1);
+  width: calc(50% - var(--space-1));
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  box-shadow: 0 1px 4px var(--color-shadow);
+  view-transition-name: switch-pill;
+}
+
+.pillDone {
+  transform: translateX(100%);
+}

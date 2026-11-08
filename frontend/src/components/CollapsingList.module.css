@@ -1,0 +1,11 @@
+/* 縮むときに中身がはみ出さないよう切る。カードの影が切れないよう、切る枠を影の分だけ外へ広げる（余白と負のマージンで並びは変えない） */
+.item {
+  overflow: hidden;
+  padding: var(--space-1);
+  margin: calc(-1 * var(--space-1));
+}
+
+/* ドラッグで並び替えている間は、動くカード（掴んだものと、よけて動くもの）が切れないよう切り取りを外す */
+ul[data-dragging] > .item {
+  overflow: visible;
+}

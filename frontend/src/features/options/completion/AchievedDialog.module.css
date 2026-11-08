@@ -1,0 +1,58 @@
+/* 選ぶ前: 破線の大きな枠。押さなくてよいことを、塗らない枠と補足で伝える（キャンバスの案 B） */
+.pick {
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  /* 色は 12 色以内（metrics.md §3）なので、キャンバスの薄い灰色ではなく今ある補足の色を使う */
+  border: 1.5px dashed var(--color-text-muted);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-accent-strong);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.pick:disabled,
+.repick:disabled {
+  cursor: progress;
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: normal;
+}
+
+/* 選んだ後: 幅いっぱいの写真に、選び直すボタンを重ねる */
+.filled {
+  position: relative;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  height: 196px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.repick {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  min-height: var(--tap-size);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: calc(var(--tap-size) / 2);
+  background: var(--color-backdrop);
+  color: var(--color-on-accent);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  cursor: pointer;
+}

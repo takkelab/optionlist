@@ -1,0 +1,40 @@
+{
+  "$comment": "目標値の唯一の正（docs/spec/metrics.md）。変えたら metrics.md と docs/decisions/ も同じ PR で直す。since は計測を始めるステップ",
+  "perf": {
+    "retriesOnFail": 1
+  },
+  "metrics": [
+    { "id": "ut-coverage-lines", "section": "§2", "label": "UT だけでの行カバレッジ（backend・frontend のロジック）", "op": "min", "target": 80, "unit": "%", "judge": "fail", "since": "1a" },
+    { "id": "backend-coverage-lines", "section": "§2", "label": "backend の行カバレッジ（UT ＋ API テスト）", "op": "min", "target": 90, "unit": "%", "judge": "fail", "since": "1a" },
+    { "id": "backend-coverage-branches", "section": "§2", "label": "backend の分岐カバレッジ（UT ＋ API テスト）", "op": "min", "target": 80, "unit": "%", "judge": "fail", "since": "1a" },
+    { "id": "design-rule-violations", "section": "§2", "label": "コード設計ルール（architecture.md §2）の違反", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1b" },
+    { "id": "lint-disable-comments", "section": "§2", "label": "lint 無効化コメント", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1a" },
+    { "id": "lint-rules-without-tests", "section": "§2", "label": "検出例と例外例のテストがない自作 lint ルール", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1b" },
+    { "id": "migration-test-failures", "section": "§2", "label": "up → down → up が通らないマイグレーション", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "2" },
+    { "id": "type-errors", "section": "§2", "label": "型エラー", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1a" },
+    { "id": "swallowed-exceptions", "section": "§2", "label": "例外の握り潰し", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1a" },
+    { "id": "audit-high", "section": "§2", "label": "依存パッケージの脆弱性（high 以上）", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1a" },
+    { "id": "backend-test-duration", "section": "§2", "label": "backend テストの実行時間", "op": "max", "target": 60, "unit": "秒", "judge": "warn", "since": "1a" },
+    { "id": "e2e-test-duration", "section": "§2", "label": "E2E テストの実行時間", "op": "max", "target": 180, "unit": "秒", "judge": "warn", "since": "4" },
+    { "id": "flaky-tests", "section": "§2", "label": "不安定なテスト（リトライなしで失敗）", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "4" },
+
+    { "id": "color-tokens", "section": "§3", "label": "使っている色の数（tokens.css。装飾の色を除く）", "op": "max", "target": 12, "unit": "色", "judge": "fail", "since": "1a" },
+    { "id": "deco-color-tokens", "section": "§3", "label": "装飾の色の数（tokens.css の --deco-*）", "op": "max", "target": 10, "unit": "色", "judge": "fail", "since": "7b" },
+    { "id": "deco-color-misuse", "section": "§3", "label": "装飾の色を縁以外に使っている宣言", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "7b" },
+    { "id": "hardcoded-colors", "section": "§3", "label": "tokens.css 以外での色の直書き", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "1a" },
+    { "id": "font-size-tokens", "section": "§3", "label": "文字サイズの種類（tokens.css）", "op": "max", "target": 6, "unit": "種類", "judge": "fail", "since": "1a" },
+    { "id": "spacing-tokens", "section": "§3", "label": "余白の種類（tokens.css）", "op": "max", "target": 8, "unit": "種類", "judge": "fail", "since": "1a" },
+    { "id": "initial-js-gzip", "section": "§3", "label": "初期表示の JS サイズ（gzip）", "op": "max", "target": 200, "unit": "KB", "judge": "fail", "since": "1a" },
+    { "id": "lcp", "section": "§3", "label": "LCP（各画面、幅 390px）", "op": "max", "target": 1.5, "unit": "秒", "judge": "warn", "since": "4" },
+    { "id": "tap-target-violations", "section": "§3", "label": "44×44px 未満のタップ領域", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "4" },
+
+    { "id": "read-api-p95", "section": "§4", "label": "読み取り API の応答時間 p95", "op": "max", "target": 50, "unit": "ms", "judge": "fail", "since": "3" },
+    { "id": "write-api-p95", "section": "§4", "label": "書き込み API の応答時間 p95", "op": "max", "target": 80, "unit": "ms", "judge": "fail", "since": "3" },
+    { "id": "image-upload-p95", "section": "§4", "label": "画像のアップロード（1MB）の応答時間 p95", "op": "max", "target": 300, "unit": "ms", "judge": "fail", "since": "8" },
+    { "id": "sql-p95", "section": "§4", "label": "SQL 1 本あたりの実行時間 p95", "op": "max", "target": 10, "unit": "ms", "judge": "fail", "since": "3" },
+    { "id": "sql-per-request", "section": "§4", "label": "1 リクエストあたりの SQL の本数（一覧・詳細）", "op": "max", "target": 3, "unit": "本", "judge": "fail", "since": "3" },
+    { "id": "full-table-scans", "section": "§4", "label": "主要クエリのフルテーブルスキャン", "op": "max", "target": 0, "unit": "件", "judge": "fail", "since": "3" },
+    { "id": "heap-growth", "section": "§4", "label": "連続 1,000 リクエスト後のヒープ増加（GC 後）", "op": "max", "target": 10, "unit": "MB", "judge": "fail", "since": "3" },
+    { "id": "rss-max", "section": "§4", "label": "連続 1,000 リクエスト中の RSS 最大値", "op": "max", "target": 200, "unit": "MB", "judge": "fail", "since": "3" }
+  ]
+}

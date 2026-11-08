@@ -1,0 +1,67 @@
+/* 画面の上端に寄せたすりガラスのバー（下のタブバーだけを浮かせる）。上に固定し、隠すときは上へ引っ込める
+   iPhone の上端の余白（safe-area）も背景で埋める */
+.header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: calc(var(--header-height) + env(safe-area-inset-top));
+  /* バーは幅いっぱい、中のボタンと見出しは中身の列に合わせる */
+  padding: env(safe-area-inset-top) calc(var(--page-inset) + var(--space-2)) 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bar);
+  backdrop-filter: blur(20px);
+  transition: transform 0.2s ease;
+  /* 「やりたいこと｜やったこと」の切り替えで一覧と一緒に滑らせない（global.css） */
+  view-transition-name: page-header;
+}
+
+.hidden {
+  transform: translateY(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header {
+    transition: none;
+  }
+}
+
+/* 固定したヘッダーの下に中身が隠れないよう、その分だけ空ける */
+.spacer {
+  height: calc(var(--header-height) + env(safe-area-inset-top));
+}
+
+.slot {
+  min-width: var(--tap-size);
+  display: flex;
+  justify-content: center;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--font-size-lg);
+  /* 詳細画面の長いタイトルは 1 行で「…」にする */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+/* 画面には出さず、読み上げにだけ伝える */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

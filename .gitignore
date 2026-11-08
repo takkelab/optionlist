@@ -1,0 +1,23 @@
+node_modules
+dist
+*.log
+.env
+.env.local
+CLAUDE.local.md
+.claude/settings.local.json
+.DS_Store
+.env.test
+coverage
+# 達成の写真（api.md §5）
+backend/uploads
+metrics-report.json
+
+# tools/lint-rules/tests/layer-imports.test.ts が一時的に置くファイル
+backend/src/**/__layer_probe_*__.ts
+frontend/src/**/__layer_probe_*__.ts
+
+# E2E の結果（npm run test:e2e が書き出す）
+e2e/results
+e2e/test-results
+e2e/playwright-report
+

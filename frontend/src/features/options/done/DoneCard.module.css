@@ -1,0 +1,83 @@
+/* 正方形のタイル。写真があってもなくても同じ大きさにする（screens.md §6） */
+.tile {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: 0 1px 4px var(--color-shadow);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tile:active {
+  background: var(--color-accent-soft);
+}
+
+.photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--color-surface);
+}
+
+.content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+/* 写真なし: タイトルが主役。長いものは 4 行で切る（全文は項目のシートで見る） */
+.title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  line-height: 1.4;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+/* 写真あり: 文字は下に寄せ、明るい写真でも読めるよう、下側を暗くする。同じ影を 2 枚重ねて濃くする */
+.withPhoto .content {
+  justify-content: flex-end;
+  gap: var(--space-1);
+  background:
+    linear-gradient(transparent 35%, var(--color-backdrop) 65%),
+    linear-gradient(transparent 35%, var(--color-backdrop) 65%);
+  color: var(--color-on-accent);
+}
+
+.withPhoto .title {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-size: var(--font-size-md);
+}
+
+.withPhoto .meta {
+  color: var(--color-on-accent);
+}

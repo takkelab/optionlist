@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.test)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(gh pr merge:*)",
+      "PowerShell(gh pr merge:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run start:*)",
+      "Bash(npm --prefix backend run dev:*)",
+      "Bash(npm --prefix backend run start:*)",
+      "PowerShell(npm run dev:*)",
+      "PowerShell(npm run start:*)",
+      "PowerShell(npm --prefix backend run dev:*)",
+      "PowerShell(npm --prefix backend run start:*)",
+      "Bash(node -e:*)",
+      "Bash(node --eval:*)",
+      "PowerShell(node -e:*)",
+      "PowerShell(node --eval:*)",
+      "Bash(npm --prefix backend exec vitest:*)",
+      "PowerShell(npm --prefix backend exec vitest:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm run -s typecheck 1>&2 || exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}

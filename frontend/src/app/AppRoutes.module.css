@@ -1,0 +1,6 @@
+/* タブバーの下にリストの最後が隠れないよう、その分だけ下を空ける */
+.withTabBar {
+  padding-bottom: var(--tab-bar-area);
+  /* 広い画面では中身を中央の列にする（tokens.css の --content-max-width。ヘッダー・タブバーも同じ列に合わせる） */
+  padding-inline: var(--page-inset);
+}

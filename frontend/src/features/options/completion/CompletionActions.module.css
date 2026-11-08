@@ -1,0 +1,38 @@
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 🎉 はシートの中でいちばん大事な操作なので、幅いっぱいの大きなボタンにする */
+.achieve {
+  min-height: var(--fab-size);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.achieve:active {
+  background: var(--color-border);
+}
+
+.achieve:disabled {
+  cursor: progress;
+}
+
+.back:disabled {
+  cursor: progress;
+}
+
+.back {
+  min-height: var(--tap-size);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}

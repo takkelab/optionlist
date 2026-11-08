@@ -1,0 +1,20 @@
+/* テーマの色（tokens.css の --deco-1〜10）を --theme-color に入れる。カードの上の線や見出しの丸がこれを使う（docs/decisions/0024） */
+.c1 { --theme-color: var(--deco-1); }
+.c2 { --theme-color: var(--deco-2); }
+.c3 { --theme-color: var(--deco-3); }
+.c4 { --theme-color: var(--deco-4); }
+.c5 { --theme-color: var(--deco-5); }
+.c6 { --theme-color: var(--deco-6); }
+.c7 { --theme-color: var(--deco-7); }
+.c8 { --theme-color: var(--deco-8); }
+.c9 { --theme-color: var(--deco-9); }
+.c10 { --theme-color: var(--deco-10); }
+
+/* 見出しの横の小さな丸。装飾の色は縁にしか使わないので、太い縁で丸を描く */
+.dot {
+  flex: none;
+  width: 0;
+  height: 0;
+  border: 5px solid var(--theme-color);
+  border-radius: 50%;
+}

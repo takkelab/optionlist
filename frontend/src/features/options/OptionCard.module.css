@@ -1,0 +1,107 @@
+/* カードの見た目（白地・角丸・影）。中に左端の取っ手（か同じ幅の空き）と、シートを開くボタンを並べる */
+.card {
+  min-height: var(--card-min-height);
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: 0 1px 4px var(--color-shadow);
+}
+
+.card:has(> .open:active) {
+  background: var(--color-accent-soft);
+}
+
+.open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) 0;
+  border: none;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 並び替えの取っ手。スマホで掴んだときにページがスクロールしないよう、ブラウザのタッチ操作を止める */
+.handle,
+.handleSpace {
+  flex-shrink: 0;
+  width: var(--tap-size);
+  align-self: center;
+  height: var(--tap-size);
+  margin-left: var(--space-1);
+}
+
+.handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  touch-action: none;
+  cursor: grab;
+}
+
+/* 掴んでいる間は、ほかのカードより上に出し、影を濃くして持ち上げたように見せる */
+.sortable {
+  position: relative;
+}
+
+.sortable[data-dragging] {
+  z-index: 1;
+}
+
+.sortable[data-dragging] .card {
+  box-shadow: 0 6px 20px var(--color-shadow), 0 2px 6px var(--color-shadow);
+}
+
+.sortable[data-dragging] .handle {
+  cursor: grabbing;
+}
+/* タイトルは 2 行まで。それより長いものは「…」で切る（全文は項目のシートで見る） */
+.title {
+  flex: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-weight: bold;
+}
+
+.count {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+}
+
+/* 予定日: 上に「あと 20 日」、下に小さく年・曜日入りの日付 */
+.plan {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.3;
+}
+
+.until {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+}
+
+.date {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}

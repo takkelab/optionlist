@@ -1,0 +1,30 @@
+.area {
+  position: fixed;
+  /* popover の既定の見た目（枠・余白・背景・中身に合わせた幅）を消す */
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: visible;
+  /* 一覧の右下の「＋」に重ならないよう、その上に出す。広い画面では中身の列に合わせる */
+  inset: auto calc(var(--page-inset) + var(--space-4)) calc(var(--tab-bar-area) + var(--fab-size) + var(--space-5))
+    calc(var(--page-inset) + var(--space-4));
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+  font-size: var(--font-size-sm);
+  box-shadow: 0 4px 12px var(--color-shadow);
+}
+
+/* 失敗ではない知らせ（コピーしました など） */
+.info {
+  background: var(--color-text);
+}

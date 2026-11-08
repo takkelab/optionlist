@@ -1,0 +1,158 @@
+.dialog {
+  width: calc(100% - var(--space-6));
+  max-width: 480px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+/* 追加・削除の確認・AI に相談で同じ動き（screens.md §1）。少し小さく透明な状態から出て、薄くなって消える */
+.dialog[open] {
+  animation: pop-in var(--motion-dialog-in) var(--ease-out);
+}
+
+.dialog[open]::backdrop {
+  animation: fade-in var(--motion-dialog-in) var(--ease-out);
+}
+
+.dialog[data-closing],
+.dialog[data-closing]::backdrop {
+  animation: fade-out var(--motion-dialog-out) var(--ease-in) forwards;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog,
+  .dialog::backdrop {
+    animation: none !important;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+}
+
+.heading {
+  font-size: var(--font-size-lg);
+}
+
+.note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.input {
+  min-height: var(--tap-size);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.cancel,
+.submit {
+  min-width: var(--tap-size);
+  min-height: var(--tap-size);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.cancel {
+  background: none;
+  color: var(--color-text-muted);
+}
+
+.centered {
+  text-align: center;
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.split .cancel,
+.split .submit {
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-weight: bold;
+}
+
+.split .cancel {
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.cancel:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.submit {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.submit:active {
+  background: var(--color-accent-strong);
+}
+
+.submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.danger {
+  min-width: var(--tap-size);
+  min-height: var(--tap-size);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+  cursor: pointer;
+}

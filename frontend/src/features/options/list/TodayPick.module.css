@@ -1,0 +1,41 @@
+.pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-4) 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  /* 白地に虹の縁（提案の今月のおすすめと同じ。docs/decisions/0024） */
+  border: var(--accent-line-width) solid transparent;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(var(--color-bg), var(--color-bg)) padding-box,
+    var(--deco-rainbow) border-box;
+}
+
+.open {
+  flex: 1;
+  min-height: var(--card-min-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.label {
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}

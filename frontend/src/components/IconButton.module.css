@@ -1,0 +1,21 @@
+.button {
+  width: var(--tap-size);
+  height: var(--tap-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.button:active {
+  background: var(--color-accent-soft);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

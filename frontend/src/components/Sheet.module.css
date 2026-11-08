@@ -1,0 +1,67 @@
+/* 画面の下に寄せたシート（項目のシート。screens.md §1・§3） */
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 90dvh;
+  margin: auto auto 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  /* 持ち手を離して元の位置へ戻るとき */
+  transition: transform var(--motion-sheet-out) var(--ease-out);
+}
+
+.sheet::backdrop {
+  background: var(--color-backdrop);
+}
+
+/* 下から滑り上がって出て、下へ滑って消える。消えるときは今の位置（持ち手で引いた位置）から下へ */
+.sheet[open] {
+  animation: slide-up var(--motion-sheet-in) var(--ease-out);
+}
+
+.sheet[open]::backdrop {
+  animation: fade-in var(--motion-sheet-in) var(--ease-out);
+}
+
+.sheet[data-closing] {
+  animation: slide-down var(--motion-sheet-out) var(--ease-in) forwards;
+}
+
+.sheet[data-closing]::backdrop {
+  animation: fade-out var(--motion-sheet-out) var(--ease-in) forwards;
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes slide-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet::backdrop {
+    animation: none !important;
+    transition: none;
+  }
+}

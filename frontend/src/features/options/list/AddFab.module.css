@@ -1,0 +1,23 @@
+.fab {
+  position: fixed;
+  /* やったリストへ切り替えるときは、一覧と一緒に滑らせずにその場で消す（global.css） */
+  view-transition-name: add-fab;
+  /* 広い画面では中身の列の右端に合わせる */
+  right: calc(var(--page-inset) + var(--space-4));
+  bottom: calc(var(--tab-bar-area) + var(--space-4));
+  width: var(--fab-size);
+  height: var(--fab-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 4px 12px var(--color-shadow);
+  cursor: pointer;
+}
+
+.fab:active {
+  background: var(--color-accent-strong);
+}

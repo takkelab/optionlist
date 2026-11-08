@@ -1,0 +1,70 @@
+@import './tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input { font: inherit; color: inherit; }
+
+h1, h2, p { margin: 0; }
+
+/* 画面を左右に滑らせる切り替え（lib/PageSlide.ts）。まず「やりたいこと｜やったこと」を押したとき（screens.md §1、docs/decisions/0019）。
+   StatusSwitch が View Transitions で前後の見た目を撮り、<html> の data-switch-to に向きを入れる。
+   名前を付けたヘッダー・タブバー・＋は動かさず、一覧（root）だけを入れ替える。選んでいる側の印（switch-pill。背景だけ）は前後の位置の間を滑る。
+   一覧は画面の幅いっぱいに滑らせる（薄くはしない）。速さはユーザーが実機で、少しずれて薄く入れ替わる形と比べて決めた */
+::view-transition-group(*) {
+  animation-duration: var(--motion-switch);
+  animation-timing-function: var(--ease-decelerate);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: var(--motion-switch) var(--ease-decelerate) both;
+}
+
+/* やったことへ: 今の一覧は左へ抜け、やったリストが右から入る */
+html[data-switch-to='done']::view-transition-old(root) { animation-name: slide-out-to-left; }
+html[data-switch-to='done']::view-transition-new(root) { animation-name: slide-in-from-right; }
+/* やりたいことへ: その逆 */
+html[data-switch-to='wish']::view-transition-old(root) { animation-name: slide-out-to-right; }
+html[data-switch-to='wish']::view-transition-new(root) { animation-name: slide-in-from-left; }
+
+/* 提案の画面を進む・戻る（screens.md §5、docs/decisions/0026）。useStackSlide が data-switch-to に向きを入れる。
+   奥へ進む画面は右から重なって入り、下になる画面は少しだけ左へずれる（iOS のナビゲーションと同じ形）。
+   重なる画面の左の辺には影を付け、どちらが上かを分かりやすくする */
+html[data-switch-to='forward']::view-transition-old(root) { animation-name: shift-to-left; }
+html[data-switch-to='forward']::view-transition-new(root) {
+  animation-name: slide-in-from-right;
+  box-shadow: var(--shadow-stack);
+}
+/* ［‹］で戻る: 今の画面が右へ抜け（上に重ねたまま）、前の画面が少し左から戻る */
+html[data-switch-to='back']::view-transition-old(root) {
+  z-index: 1;
+  animation-name: slide-out-to-right;
+  box-shadow: var(--shadow-stack);
+}
+html[data-switch-to='back']::view-transition-new(root) { animation-name: shift-from-left; }
+
+@keyframes shift-to-left { to { transform: translateX(-30%); } }
+@keyframes shift-from-left { from { transform: translateX(-30%); } }
+@keyframes slide-out-to-left { to { transform: translateX(-100%); } }
+@keyframes slide-in-from-right { from { transform: translateX(100%); } }
+@keyframes slide-out-to-right { to { transform: translateX(100%); } }
+@keyframes slide-in-from-left { from { transform: translateX(-100%); } }
+
+/* 視差効果を減らす設定では StatusSwitch が View Transitions を使わないが、念のため動きも止める */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

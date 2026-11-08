@@ -1,0 +1,91 @@
+/* 画面全体を覆う透明な面。押したら早送りする */
+.area {
+  position: fixed;
+  inset: 0;
+  /* popover の既定の見た目（枠・余白・背景・中身に合わせた大きさ）を消す */
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.area:popover-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 紙吹雪はカードの真ん中から飛ばす */
+.center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 220px;
+  max-width: calc(100vw - var(--space-6) * 2);
+  padding: var(--space-5) var(--space-5);
+  /* 白地に虹の縁（docs/decisions/0024） */
+  border: var(--accent-line-width) solid transparent;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(var(--color-bg), var(--color-bg)) padding-box,
+    var(--deco-rainbow) border-box;
+  box-shadow: 0 8px 32px var(--color-shadow);
+  text-align: center;
+}
+
+.emoji {
+  font-size: calc(var(--font-size-xl) * 2);
+  line-height: 1;
+}
+
+.message {
+  margin: 0;
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  /* 文言に書いた改行で折り返す（PraiseMessages.ts） */
+  white-space: pre-line;
+}
+
+.dot,
+.dotStrong,
+.dotWarm,
+.spark {
+  position: absolute;
+  width: 10px;
+  height: 14px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.dot {
+  background: var(--color-accent);
+}
+
+.dotStrong {
+  background: var(--color-accent-strong);
+}
+
+.dotWarm {
+  background: var(--color-danger);
+}
+
+.spark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 2px var(--color-accent);
+}

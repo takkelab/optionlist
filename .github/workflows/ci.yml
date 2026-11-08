@@ -1,0 +1,85 @@
+# testing.md §6。目標値の判定は scripts/metrics-check.ts（ローカルの npm run metrics:check と同じ）
+# 性能（testing.md §3）と E2E（testing.md §5）も metrics:check が流す（npm run test:perf・npm run test:e2e）
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    # edited: PR 本文を直したときにも pr-check をやり直す
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: optionlist_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/optionlist_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install
+        run: |
+          npm ci
+          npm --prefix backend ci
+          npm --prefix frontend ci
+      - name: Install the browser for E2E
+        run: npx playwright install --with-deps chromium
+      # dbmate の --env-file はファイルがないと止まるので、ローカルと同じく backend/.env.test を作る
+      - name: Migrate the test database
+        run: |
+          echo "DATABASE_URL=$DATABASE_URL" > backend/.env.test
+          npm --prefix backend run db:migrate:test
+      - name: Test the quality scripts
+        run: npm run test:scripts
+      - name: metrics:check
+        run: npm run metrics:check
+      - name: Upload metrics-report.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-report
+          path: metrics-report.json
+          if-no-files-found: warn
+
+  pr-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install
+        run: npm ci
+      - name: Check PR body and decisions
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run check:pr

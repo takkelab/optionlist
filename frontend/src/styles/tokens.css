@@ -1,0 +1,98 @@
+/* デザイントークン。色・文字サイズ・余白はこのファイルにだけ書く（architecture.md §1、metrics.md §3）
+   白いカードに色みのない灰色の背景、アクセントはティール（docs/decisions/0010、0024） */
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f2f2f7;
+  --color-border: #e1e3e8;
+  --color-text: #1f2328;
+  --color-text-muted: #5f6670;
+  --color-accent: #0b7a7c;
+  --color-accent-strong: #075a5c;
+  --color-accent-soft: #dff1f0;
+  --color-on-accent: #ffffff;
+  --color-danger: #b3362a;
+  --color-backdrop: rgba(20, 24, 30, 0.4);
+  --color-shadow: rgba(20, 24, 30, 0.08);
+
+  /* 装飾の色: アプリのアイコンの虹の輪を、色相 36° おきに 10 色に分けたもの（輪の並び順）。
+     縁（border・box-shadow・outline、虹の縁の border-box）にしか使わない（metrics.md §3、docs/decisions/0024）。
+     提案のテーマは id 1〜10 をこの順に当てる */
+  --deco-1: #e0a800;
+  --deco-2: #ef5b2e;
+  --deco-3: #e83f7c;
+  --deco-4: #c447c4;
+  --deco-5: #7d5ce6;
+  --deco-6: #3f6fe8;
+  --deco-7: #14a3d6;
+  --deco-8: #18b083;
+  --deco-9: #3fb040;
+  --deco-10: #9bb51f;
+  /* 虹の縁（今月のおすすめ・今日はこれどう？・🎉）。background の border-box に重ねて使う */
+  --deco-rainbow: linear-gradient(
+    135deg,
+    var(--deco-1),
+    var(--deco-2),
+    var(--deco-3),
+    var(--deco-4),
+    var(--deco-5),
+    var(--deco-6),
+    var(--deco-7),
+    var(--deco-8),
+    var(--deco-9)
+  );
+  /* 色の付いた線の太さ（虹の縁・テーマの上の線）。主役と脇役で太さをそろえる。--deco-* は色だけにするので、名前を分ける */
+  --accent-line-width: 3px;
+  /* ヘッダーとタブバーのガラスの背景。強いぼかしと合わせて、下の色や動きは感じるが文字は重ならないようにする */
+  --color-bar: rgba(255, 255, 255, 0.65);
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  /* 提案の一覧の行の見出し（引きの文）。本文より一回り大きく */
+  --font-size-hook: 1.0625rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.5rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --tap-size: 44px;
+  --card-min-height: 64px;
+  /* 探す画面の棚のカードの幅と高さ（screens.md §5）。375px 幅で 2 枚と少しが見える */
+  --shelf-card-size: 160px;
+  /* やったリストのタイルの最小の幅。320px 幅でも 2 列に収まる */
+  --done-tile-min-size: 136px;
+  /* PC など広い画面では、中身をこの幅の列にして中央に置く。ヘッダー・タブバー・「＋」・トーストもこの列の端に合わせる */
+  --content-max-width: 960px;
+  /* 今月のおすすめのカードの幅の上限。広い画面で列の 85% にすると大きすぎるので抑える */
+  --hero-card-max-width: 600px;
+  /* 列の外側の余白（狭い画面では 0） */
+  --page-inset: max(0px, calc((100vw - var(--content-max-width)) / 2));
+  --fab-size: 56px;
+  --header-height: 64px;
+  --tab-bar-height: 64px;
+  /* タブバーは画面の下から浮かせる。画面の下からタブバーの上端までの高さ（中身の下の余白、「＋」とトーストの位置に使う） */
+  --tab-bar-area: calc(var(--tab-bar-height) + var(--space-3) + env(safe-area-inset-bottom));
+  /* モーダルの出方と消え方（screens.md §1）。閉じるときは出るときより速く */
+  --motion-sheet-in: 280ms;
+  --motion-sheet-out: 200ms;
+  --motion-dialog-in: 180ms;
+  --motion-dialog-out: 120ms;
+  /* 「やりたいこと｜やったこと」の切り替えで一覧が滑る長さ */
+  --motion-switch: 250ms;
+  /* 提案の画面を進む・戻るときに、上に重なる画面の左の辺に付ける影 */
+  --shadow-stack: -1px 0 4px var(--color-shadow), -4px 0 16px var(--color-shadow);
+  /* 出るときは最後にゆっくり止まり、消えるときはだんだん速く */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* 押した瞬間から動き出し、最後にゆっくり止まる（切り替え。Material Design の decelerate の曲線）。
+     動き出しがゆっくりな曲線だと、最初の数コマがほとんど動かず、押してから動くまでに間があるように感じる */
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+}

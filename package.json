@@ -1,0 +1,26 @@
+{
+  "name": "optionlist-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "npm --prefix backend run -s typecheck && npm --prefix frontend run -s typecheck && tsc -p scripts && tsc -p tools/lint-rules && tsc -p e2e",
+    "test": "npm --prefix backend test",
+    "test:perf": "npm --prefix backend run test:perf",
+    "test:e2e": "npm --prefix backend run -s db:migrate:test && npm --prefix frontend run -s build && playwright test -c e2e",
+    "test:scripts": "node --test \"scripts/tests/*.test.ts\"",
+    "metrics:check": "node scripts/metrics-check.ts",
+    "metrics:usage": "node --env-file=backend/.env scripts/metrics-usage.ts",
+    "check:pr": "node scripts/check-pr.ts",
+    "pr:merge": "node scripts/merge-pr.ts",
+    "lint": "oxlint",
+    "test:lint-rules": "node --test --test-concurrency=2 \"tools/lint-rules/tests/*.test.ts\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.19.2",
+    "mysql2": "^3.24.6",
+    "oxc-parser": "^0.156.0",
+    "oxlint": "^1.90.0",
+    "typescript": "~7.0.2"
+  }
+}
