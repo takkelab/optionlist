@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { TestDatabase } from "../fakes/TestDatabase";
 
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 
 afterAll(async () => {
   await pool.end();

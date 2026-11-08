@@ -39,7 +39,7 @@ import { GapSortOrderPlanner } from "./services/SortOrderPlanner";
 const PORT = Number(process.env.PORT ?? 8000);
 
 const metrics = new PromMetrics();
-const db = new PgDatabase(new PgPoolFactory(process.env).create(), metrics);
+const db = new PgDatabase(new PgPoolFactory(process.env, console).create(), metrics);
 const clock = new SystemClock();
 const mapper = new OptionRowMapper();
 const photoFiles = new LocalPhotoFiles(process.env.UPLOAD_DIR ?? "uploads");

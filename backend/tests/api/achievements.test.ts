@@ -7,7 +7,7 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/options/:id/achievements（api.md §2、testing.md §2）
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const data = new TestDatabase(pool);
 const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

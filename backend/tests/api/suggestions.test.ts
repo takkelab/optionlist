@@ -10,7 +10,7 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // GET /api/suggestions、GET /api/suggestions/:id（api.md §2、testing.md §2）。提案はマイグレーションで入れたマスターデータを使う
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const data = new TestDatabase(pool);
 const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
 const app = new TestApp({ db }).build();

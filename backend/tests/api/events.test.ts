@@ -7,7 +7,7 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/events（api.md §2、data.md §3、testing.md §2）
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const data = new TestDatabase(pool);
 const app = new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build();
 const event = { type: "client_error", payload: { message: "boom", route: "/suggestions/3" }, occurredAt: "2026-11-08T09:30:00.123+09:00" };

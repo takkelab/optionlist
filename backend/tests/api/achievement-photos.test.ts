@@ -15,7 +15,7 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // 達成の写真（api.md §2・§5、testing.md §2）。保存先はテストごとの一時フォルダ
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const data = new TestDatabase(pool);
 const dbWrapper = new PgDatabase(pool, new PromMetrics());
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-photos-"));

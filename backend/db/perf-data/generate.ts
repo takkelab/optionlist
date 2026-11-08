@@ -5,7 +5,7 @@ import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { PERF_DATA_COUNTS, PerfDataGenerator, SeededRandom, TestDatabaseGuard } from "./PerfDataGenerator";
 
 new TestDatabaseGuard().ensureSafe(process.env.DATABASE_URL);
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const started = performance.now();
 try {
   const db = new PgDatabase(pool, new PromMetrics());

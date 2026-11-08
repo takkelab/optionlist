@@ -7,7 +7,7 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // GET /api/options、GET /api/options/:id（api.md §2、testing.md §2）
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const data = new TestDatabase(pool);
 const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
 const VALIDATION_ERROR = { error: { code: "VALIDATION_ERROR" } };

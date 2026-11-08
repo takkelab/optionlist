@@ -4,13 +4,29 @@ import { PgDatabase } from "../../src/infra/PgDatabase";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakeDatabase } from "../fakes/FakeDatabase";
+import { FakeLogger } from "../fakes/FakeLogger";
 import { TestApp } from "../fakes/TestApp";
 
 // テスト用 DB（CI は PostgreSQL のサービスコンテナ、ローカルは backend/.env.test）を使う
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 
 afterAll(async () => {
   await pool.end();
+});
+
+// 使っていない接続が DB 側で切られると、pg のプールは error イベントを出す。受け手がないとプロセスが落ちる
+describe("PgPoolFactory", () => {
+  it("logs an error from an idle connection instead of crashing the process", async () => {
+    const logger = new FakeLogger();
+    const idle = new PgPoolFactory(process.env, logger).create();
+    const lost = new Error("terminating connection due to administrator command");
+    try {
+      expect(idle.emit("error", lost)).toBe(true);
+      expect(logger.errors()).toEqual([lost]);
+    } finally {
+      await idle.end();
+    }
+  });
 });
 
 describe("GET /api/health/db", () => {

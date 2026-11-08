@@ -41,7 +41,7 @@ const PHOTO_RUNS = 20;
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1024 * 1024 - 4)]);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-perf-photos-"));
 
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
 const results = new PerfResults();
 const percentile = new NearestRankPercentile();

@@ -14,7 +14,7 @@ const COUNTS: PerfDataCounts = {
   events: 9,
 };
 
-const pool = new PgPoolFactory(process.env).create();
+const pool = new PgPoolFactory(process.env, console).create();
 const db = new PgDatabase(pool, new PromMetrics());
 
 afterAll(async () => {
