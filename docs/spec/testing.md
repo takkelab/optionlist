@@ -7,7 +7,7 @@
 - 種類ごとにフォルダを分け（`tests/unit/`、`api/`、`migrations/`、`perf/`）、UT だけのカバレッジを計測できるようにする
 - DB は PostgreSQL 17（手元は Windows に直接入れたもの、CI は `postgres:17` のサービスコンテナ。architecture.md §4.1）
 - テスト用 DB は `optionlist_test`。接続先は `backend/.env.test` で切り替え、テスト開始時に dbmate で最新までマイグレーションする（`npm test` が vitest の前に `db:migrate:test` を流す）。ロール（data.md §4）は `db:roles:test` がなければ作る
-- **アプリとしてのテストは、本番と同じ `ol_app` で接続する**（`APP_DATABASE_URL`）。スーパーユーザー（CI の既定の `postgres` など）や表の持ち主は RLS を素通りするので、それで流すと RLS が効いていなくても通ってしまう。データを空にする・入れ直す後始末だけは `ol_migrator` で行う（`DATABASE_URL`）
+- **アプリとしてのテストは、本番と同じ `ol_app` で接続する**（`APP_DATABASE_URL`）。スーパーユーザー（CI の既定の `postgres` など）は RLS を素通りし、`ol_migrator` は `USING (true)` のポリシーで全員の行を読み書きできる（data.md §4）ので、どちらで流しても RLS が効いていなくても通ってしまう。データを空にする・入れ直す後始末と、性能用データの投入だけは `ol_migrator` で行う（`DATABASE_URL`。全員の行に効く）。CI の `postgres` はロールとデータベースを作るときだけ使う
 - テスト用 DB を共有するので、backend のテストファイルは並列に流さない（vitest の `fileParallelism: false`）
 - テストで保存する画像は `UPLOAD_DIR` で別フォルダに出す
 
@@ -33,8 +33,8 @@
   - 予定日を入れて消せること、実在しない日付が 400 になること
   - 想定外のエラーで 500 が返り、`unhandled_errors_total` が増えること
   - アカウント（api.md §6）: Cookie がなければ一覧が空で、アカウントを作らないこと（読むだけ・events だけでは users が増えない）。`POST /api/options` で初めてアカウントができ、`Set-Cookie` に `HttpOnly`・`SameSite=Lax`・`Path=/`・`Max-Age` が付くこと。`last_seen_at` が 1 日 1 回だけ書かれ、そのとき Cookie を入れ直すこと（時計はフェイクで進める）
-  - 復旧コード: 発行したコードで別の Cookie から移れ、移ったあと元の Cookie では一覧が空になること。使ったコードと、作り直す前のコードが 404 になること。空白・ハイフン・小文字を混ぜても通ること。移る側の端末にあった古いアカウントが消えること
-  - 回数の制限: 同じ IP からのアカウントの作成と復旧コードの入力が上限で 429 になり `Retry-After` が付くこと。合っているコードでも、上限を超えたら 429 のままであること
+  - 復旧コード: 発行したコードで別の Cookie から移れ、移ったあと元の Cookie では一覧が空になること。使ったコードと、作り直す前のコードが 404 になること。空白・ハイフン・小文字を混ぜても通ること。移る側の端末にあった古いアカウントが消えること。**自分のアカウントのコードを自分の端末で入れたときは、何も消えず**（項目・写真が残る）、409 にもならず、Cookie だけが新しい鍵になること。この端末に別のアカウントの項目があるとき、`replace` なしでは 409 と件数が返ってコードが使われず（もう一度使える）、`replace: true` で移れること
+  - 回数の制限: 同じ IP からのアカウントの作成と復旧コードの入力が上限で 429 になり `Retry-After` が付くこと。合っているコードでも、上限を超えたら 429 のままで、コードは消費されないこと。上限の前の合わないコードは 404 であること。アカウントのない `POST /api/events` が、同じ IP から上限を超えると 429 になること
   - すべてのデータを消す: 行と写真のファイルが消え、Cookie が消えること。アカウントがなくても 204 になること
   - セキュリティ（docs/decisions/0038）: `Origin` が違う書き込みが 403 になること。`Content-Type` が JSON でない JSON の API が 400 になること。`/api/metrics` がトークンなし・違うトークンで 404 になること。`APP_ENV=production` で `/api/health/db` が `message` を返さないこと。500 の `message` に内部の情報が出ないこと
   - 写真（docs/decisions/0037）: 位置情報の入った JPEG を送ると、保存されたファイルに EXIF が残っていないこと。写真の配信に `Cache-Control: private`・`Vary: Cookie`・CSP が付くこと。1 人あたりの上限で 429 になること
@@ -95,7 +95,8 @@ main に入ったときだけ、別のワークフロー（`.github/workflows/de
 2. **マイグレーションのテスト（DB の設定）**: `backend/tests/migrations/rls.test.ts`。最新までマイグレーションした DB の `pg_catalog` を読んで、次を確かめる
    - `public` のすべての表のうち、RLS の対象外の許可リスト（data.md §4。テストの中に表の名前で持つ）にないものは、`relrowsecurity` と `relforcerowsecurity` が true で、`user_id`（users は `id`）が NOT NULL で、`app.user_id` を使うポリシーが USING と WITH CHECK の両方にあること。**新しい表を足して RLS を付け忘れると、ここで落ちる**
    - 許可リストの表は、`ol_app` に SELECT の権限がない（events・auth_attempts）か、利用者のデータを持たない（マスターデータ）こと。許可リストに足すときは、data.md §4 と docs/decisions/ にも理由を書く
-   - `ol_app` が `rolbypassrls = false` で、どの表の持ち主でもなく、スーパーユーザーでもないこと。`ol_metrics` が `usage_*` のビュー以外を読めないこと。`ol_cleanup` が INSERT・UPDATE を持たないこと。認証の関数が `SECURITY DEFINER` で `search_path` を固定していること
+   - どの `ol_*` ロールも `rolbypassrls = false` でスーパーユーザーでもないこと。`ol_app` がどの表の持ち主でもないこと。`pg_policies` を読んで、`USING (true)`（または `WITH CHECK (true)`）のポリシーが `ol_migrator`・`ol_cleanup`・`ol_definer` 宛てにしかないこと（`PUBLIC` 宛ても許さない）。`ol_metrics` が `usage_*` のビュー以外を読めないこと。`ol_cleanup` が INSERT・UPDATE を持たないこと。認証の関数が `SECURITY DEFINER` で `search_path` を固定していること
+   - 提案を入れ替えるマイグレーション（`ol_migrator` で流す）が、ほかの人の options の `suggestion_id` も NULL にすること（RLS で黙って 0 行にならない）
    - RLS を直接確かめる: 2 人分の行を入れ、`ol_app` で `app.user_id` を B にしたトランザクションでは、A の行がどの表からも 0 件になること。A の `user_id` で INSERT・UPDATE しようとすると失敗すること。`app.user_id` を設定しないと 0 件になり、一度設定した接続でトランザクションが終わったあと（空文字が返る状態）でもエラーにならず 0 件になること
 3. **API の分離テスト（実際の振る舞い）**: `backend/tests/api/isolation.test.ts`
    - `ExpressApp` に登録されたすべてのルート（メソッドとパス）を、記録用のフェイクのルーター（`backend/tests/fakes/RouteRecorder.ts`）で集める。テストの中のケースの表（ルートごとに「他人の行を指定する」か「対象外の理由」を書く）と突き合わせ、**表にないルートがあれば落ちる**。新しいルートを足した PR は、表にも 1 行足す

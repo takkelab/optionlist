@@ -8,7 +8,9 @@
 - DB を PostgreSQL 17 にする。ドライバは `pg`、マイグレーションは今までどおり dbmate
 - 利用者のデータの表（users を除く options・achievements）に `user_id` を持たせる。repository の SQL で必ず絞り込み、そのうえで DB の行単位のセキュリティ（RLS）でも他人の行を封じる
 - RLS は `current_setting('app.user_id', true)` と比べるポリシーにする。backend は 1 リクエストを 1 つのトランザクションで包み、その中で `SET LOCAL app.user_id` してから SQL を流す（`UserScopedDatabase`。architecture.md §2 L13）
-- ロールを分ける。`ol_migrator`（表の持ち主。マイグレーションだけ）、`ol_app`（アプリ。RLS を受ける。BYPASSRLS なし）、`ol_cleanup`（削除のジョブ。0040）、`ol_metrics`（集計のビューだけを読む。0043）、`ol_definer`（ログインしない。鍵から人を探す関数と集計のビューの持ち主）。詳しくは data.md §4
+- ロールを分ける。`ol_migrator`（表の持ち主。マイグレーションだけ）、`ol_app`（アプリ。RLS を受ける）、`ol_cleanup`（削除のジョブ。0040）、`ol_metrics`（集計のビューだけを読む。0043）、`ol_definer`（ログインしない。鍵から人を探す関数と集計のビューの持ち主）。詳しくは data.md §4
+- どのロールにも BYPASSRLS を付けない。ポリシーを `TO <ロール>` でロールごとに付け、`ol_app` には「自分の行だけ」、全員の行を扱う `ol_migrator`・`ol_cleanup`・`ol_definer` には `USING (true)` を付ける。理由は 2 つ。Cloud SQL ではスーパーユーザーになれず、BYPASSRLS を付けられるかに頼れない。また FORCE を付けた表では持ち主（`ol_migrator`）も RLS を受け、マイグレーションの `UPDATE` やテストの後始末が黙って 0 行になる
+- 認証の関数は、結果の種類（`ok`・`not_found`・`rate_limited`）と ID を返す（回数の上限とコードの誤りを区別して 429 と 404 に分けるため）
 - RLS の中では「鍵から人を探す」ことができない（まだ誰か分からないので）。そこで、人の ID を 1 つだけ返す `SECURITY DEFINER` の関数（`auth_find_user` など）に限って、表を横断させる
 - 本番は空から始める（0044）ので、MySQL の 13 本のマイグレーションは Postgres の基準のマイグレーション 1 本にまとめ直す。マスターデータ（提案とテーマ・タグ）もここに入れる
 

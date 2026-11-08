@@ -41,7 +41,7 @@
 - 400 `VALIDATION_ERROR`: リクエストの JSON を読めない・大きすぎる・`Content-Type` が違う、一覧の `status` がない・不正、タイトルが空・長すぎる、PATCH に更新する項目がない、予定日が実在する日付でない、`ids` に重複か自分の pending でない option（完了済み・削除済み・他人のもの）がある、イベントの形式違反、写真がない・5MB を超える・画像として読めない・JPEG / PNG / WebP でない、復旧コードの形が違う（data.md §3）
 - 403 `FORBIDDEN`: `GET`・`HEAD` 以外で `Origin` が違う（§1）
 - 404 `NOT_FOUND`: 存在しない・他人の option / 達成記録 / 写真のファイル、存在しない suggestion（`:id` が正の整数でないものを含む）、合わない復旧コード、アカウントがないのに復旧コードを発行しようとした、どのエンドポイントにも当たらない `/api/*`
-- 409 `CONFLICT`: すでに追加済みの提案をもう一度追加しようとした
+- 409 `CONFLICT`: すでに追加済みの提案をもう一度追加しようとした、復旧コードで移るとこの端末の別のアカウントのデータが消えるのに `replace` がない（§6。`localItemCount` を添える）
 - 429 `TOO_MANY_REQUESTS`: 回数の制限（§6）を超えた、写真の 1 人あたりの上限（data.md §3）を超えた。`Retry-After` を付ける
 - 500 `INTERNAL_ERROR`: 想定外のエラー。共通のエラーハンドラで返し、必ずログ（`kind: unhandled_error`）に出してメトリクスで数える。応答の `message` に内部の情報を入れない
 
@@ -117,15 +117,17 @@ type ApiError = {
 
 ## 6. アカウントとセッション（docs/decisions/0033）
 - Cookie: 名前は `__Host-ol_session`、中身は 32 バイトの乱数を base64url にしたもの。`HttpOnly`・`Secure`・`SameSite=Lax`・`Path=/`、`Max-Age` は 400 日。手元の開発（http）だけは `Secure` を付けられないので、名前を `ol_session` にする
-- リクエストごとに、Cookie の鍵の SHA-256 で `auth_find_user`（data.md §4）を呼び、人を決める。見つからなければ「アカウントがない人」
+- リクエストごとに、Cookie の鍵の SHA-256 で `auth_find_user`（data.md §4）を呼び、人と `last_seen_at` を決める。見つからなければ「アカウントがない人」
 - アカウントを作るのは `POST /api/options` だけ（ほかの書き込みは、すでにある自分の行を指すので、アカウントがなければ 404 か空の結果になる）。作るときは、新しい鍵を作って `auth_create_user` を呼び、`Set-Cookie` で返す
-- その日まだ `last_seen_at` を書いていなければ（日本時間の日付で比べる）、書いて、Cookie を `Max-Age` 400 日で入れ直す（Chrome は Cookie の期限を最長 400 日に切り詰めるため）
+- `auth_find_user` が返した `last_seen_at` が今日（日本時間の日付）でなければ、書いて、Cookie を `Max-Age` 400 日で入れ直す（Chrome は Cookie の期限を最長 400 日に切り詰めるため）
 - 復旧コード
   - `POST /api/account/recovery-code`: 新しいコードを作り、ハッシュを `users.recovery_code_hash` に入れ（前のものは上書きで使えなくなる）、平文はこの応答でだけ返す
-  - `POST /api/account/restore`: コードを正規化（data.md §3）してハッシュにし、`auth_restore` を呼ぶ。合えば、新しい鍵の Cookie を返す。そのアカウントを使っていた端末の Cookie は、鍵が変わるので無効になる。今の端末にアカウントがあれば、移る前に画面で確認したうえで（screens.md §9）、移ったあとにその古いアカウントを消す（誰も開けなくなるため）
+  - `POST /api/account/restore`: コードを正規化（data.md §3）してハッシュにし、`auth_restore` を呼ぶ。`status` が `ok` なら新しい鍵の Cookie を返し、`not_found` なら 404、`rate_limited` なら 429（`Retry-After`）。そのアカウントを使っていた端末の Cookie は、鍵が変わるので無効になる。今の端末に**別の**アカウントがあれば、移ったあとにその古いアカウントを消す（誰も開けなくなるため）。返った ID が今の端末のアカウントと同じ（自分のコードを自分の端末で入れた）ときは、何も消さない（Cookie だけが新しい鍵になる）
+  - 消す前の確認: 本文は `{ code, replace?: boolean }`。`replace` が true でなく、コードが合い、今の端末に**別の**アカウントがあって項目か達成が 1 件以上あるときは、コードを使わずに 409 `CONFLICT`（`{ error: { code: 'CONFLICT', message }, localItemCount: number }`）を返す。画面は確認（screens.md §9）のあとで `replace: true` を付けて送り直す。コードを使わない判定も `auth_restore` の中で行い、回数に数える（data.md §4。関数は `replace` を引数に取り、確認が要るときは `status` を `'needs_confirm'` にして、その端末の件数を数えるために今の人の ID も受け取る）
 - 回数の制限（超えたら 429。docs/decisions/0038）※仮決め
   - アカウントの作成: 1 つの IP から 1 時間に 20 件まで（DB の auth_attempts で数える）
   - 復旧コードの入力: 1 つの IP から 1 時間に 10 回まで（同上。合っても合わなくても数える）
   - 写真の保存: 1 アカウント 1 時間に 60 回まで（台ごとのメモリで数える）
   - そのほかの書き込み: 1 アカウント 1 分に 120 回まで（台ごとのメモリで数える）
+  - `POST /api/events`: 1 つの IP から 1 分に 20 リクエストまで（台ごとのメモリで数える。アカウントなしでも受け取るので、アカウントではなく IP で数える）
 - IP は Cloud Run が付ける `X-Forwarded-For` の右端から取る（Express の `trust proxy` を 1 にする）。DB とアプリが書くログには `IP_HASH_SECRET` で HMAC したものだけを入れる（Cloud Run が自動で残すリクエストのログには IP がそのまま入り、30 日で消える。プライバシーポリシーに書く。docs/decisions/0039）

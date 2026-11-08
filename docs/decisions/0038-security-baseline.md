@@ -7,7 +7,7 @@
 ## 決めたこと
 - **CSRF**: Cookie は SameSite=Lax。`GET`・`HEAD` 以外は、`Origin` が自分のオリジンと一致しなければ 403 `FORBIDDEN` にする。JSON の API は `Content-Type: application/json` でなければ 400 にする
 - **ヘッダー**: 画面には `Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` を付ける。ほかに HSTS（1 年）、`Referrer-Policy: same-origin`、`X-Content-Type-Options: nosniff`、`Permissions-Policy`（カメラ・位置などを切る）を付ける。外のスクリプト・フォント・計測タグは読まない
-- **回数の制限**（超えたら 429 `TOO_MANY_REQUESTS`）: アカウントの作成は 1 つの IP から 1 時間に 20 件まで、復旧コードの入力は 1 つの IP から 1 時間に 10 回まで（どちらも DB に数える。台数が増えても効くように）。そのほかの書き込みは、1 アカウントあたり 1 分に 120 回まで（台ごとのメモリで数える）
+- **回数の制限**（超えたら 429 `TOO_MANY_REQUESTS`）: アカウントの作成は 1 つの IP から 1 時間に 20 件まで、復旧コードの入力は 1 つの IP から 1 時間に 10 回まで（どちらも DB に数える。台数が増えても効くように）。写真の保存は 1 アカウント 1 時間に 60 回まで、そのほかの書き込みは 1 アカウントあたり 1 分に 120 回まで、アカウントなしでも受け取る `POST /api/events` は 1 つの IP から 1 分に 20 リクエストまで（この 3 つは台ごとのメモリで数える。画面の側の「1 分に 10 件」は改造した画面には効かないため、サーバーでも数える）
 - **`/api/metrics`**: `Authorization: Bearer <METRICS_TOKEN>` が合わなければ 404 にする（あることも見せない）
 - **`/api/health/db`**: 本番と確認用では `message` を返さない（接続先やエラーの中身を外に出さない）
 - **ID は連番のまま**にする（0034）

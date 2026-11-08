@@ -145,37 +145,42 @@
 
 ## 4. RLS とロール（docs/decisions/0034）
 ### ロール
-| ロール | ログイン | 使うところ | 権限 |
-|--------|----------|------------|------|
-| `ol_migrator` | する | dbmate（マイグレーション）だけ | 表・ビュー・関数の持ち主 |
-| `ol_app` | する | アプリ（Cloud Run のサービス） | users・options・achievements の SELECT / INSERT / UPDATE / DELETE、マスターデータの SELECT、events の INSERT、§4 の認証の関数の EXECUTE。BYPASSRLS なし、表の持ち主でもない |
-| `ol_cleanup` | する | 削除のジョブ（§5）だけ | BYPASSRLS。users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） |
-| `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） |
-| `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | BYPASSRLS。関数とビューの中で必要な表だけを読む・書く |
+どのロールにも BYPASSRLS とスーパーユーザーは付けない（Cloud SQL で付けられるかに頼らない。RLS を素通りさせたいロールには、下の「ロールごとのポリシー」で `USING (true)` を付ける）。
+
+| ロール | ログイン | 使うところ | 権限 | 利用者の表（users・options・achievements）のポリシー |
+|--------|----------|------------|------|------|
+| `ol_migrator` | する | dbmate（マイグレーション）、テストの後始末、性能用データの投入、週 1 の書き出し、復旧の訓練の数え上げ | 表・ビュー・関数の持ち主 | `USING (true) WITH CHECK (true)` |
+| `ol_app` | する | アプリ（Cloud Run のサービス） | users・options・achievements の SELECT / INSERT / UPDATE / DELETE、マスターデータの SELECT、events の INSERT、§4 の認証の関数の EXECUTE。表の持ち主ではない | 自分の行だけ（下の RLS） |
+| `ol_cleanup` | する | 削除のジョブ（§5）だけ | users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） | `USING (true)`（SELECT・DELETE のポリシーだけ） |
+| `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） | なし（表の権限がない） |
+| `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | 関数とビューの中で必要な表だけを読む・書く | `USING (true) WITH CHECK (true)` |
 
 - 本番では、中身を見るのは障害対応のときだけにし、Cloud SQL の IAM の管理用ユーザーで入る（docs/decisions/0043）
+- `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer` だけ（testing.md §7 で確かめる）
 
 ### RLS
-- users・options・achievements は `ENABLE ROW LEVEL SECURITY` と `FORCE ROW LEVEL SECURITY`（持ち主にも効かせる）にする
-- ポリシーは「`user_id`（users は `id`）＝ `NULLIF(current_setting('app.user_id', true), '')::bigint`」を、USING と WITH CHECK の両方に付ける
+- users・options・achievements は `ENABLE ROW LEVEL SECURITY` と `FORCE ROW LEVEL SECURITY`（持ち主にも効かせる）にする。ポリシーは `TO <ロール>` でロールごとに分けて付ける（上の表の右の列）。ポリシーがないロールは、権限があっても 1 行も読めない・書けない
+- `ol_app` のポリシーは「`user_id`（users は `id`）＝ `NULLIF(current_setting('app.user_id', true), '')::bigint`」を、USING と WITH CHECK の両方に付ける
   - `current_setting(…, true)` は、一度も設定していなければ NULL を返す。ただし同じ接続で一度 `SET LOCAL` したあとは、トランザクションが終わっても空文字を返す。`''::bigint` はエラーになるので `NULLIF` で包む。設定していなければ NULL と比べることになり、行は 0 件になる（書き込みは WITH CHECK で失敗する）
 - アプリは、利用者のデータに触る SQL を必ず `UserScopedDatabase.run(fn)` の中で流す。`run` は 1 つのトランザクションで、最初に `SELECT set_config('app.user_id', $1, true)`（`SET LOCAL` と同じ）を流す。トランザクションの外で SQL を流さない（接続プールで、前の人の値が残った接続を使い回さないため）。いくつかの SQL をまとめて成功・失敗させたいとき（並び替えの振り直しなど）は、同じ `run` の中で流す。これは lint で強制する（architecture.md §2 の L13）
+- 提案を入れ替えるマイグレーション（§2）の `UPDATE options SET suggestion_id = NULL` は、`ol_migrator` の `USING (true)` のポリシーで全員の行に効く。マイグレーションのテストで、ほかの人の行にも効くことを確かめる
 - RLS の対象外の表（許可リスト。testing.md §7）: マスターデータの themes・suggestions・tags・suggestion_tags（全員に同じものを見せる）、events（`ol_app` は INSERT だけ）、auth_attempts（`ol_app` は関数を通してだけ触る）
 
 ### 認証の関数（`SECURITY DEFINER`、持ち主は `ol_definer`、`search_path` を固定する）
-RLS の中では「鍵から人を探す」ことができない（まだ誰か分からないので）。そこで、次の関数だけに限って、表を横断して探せるようにする。どれも 1 人分の ID だけを返し、一覧は返さない。
+RLS の中では「鍵から人を探す」ことができない（まだ誰か分からないので）。そこで、次の関数だけに限って、表を横断して探せるようにする。どれも 1 人分の結果だけを返し、一覧は返さない。
+結果の `status` は `'ok'`・`'not_found'`・`'rate_limited'`（`auth_restore` だけは `'needs_confirm'` もある）のどれか。`'rate_limited'` のときは `retry_after_seconds` も返す（api.md §3 の 429 の `Retry-After`）。
 
-| 関数 | 内容 |
-|------|------|
-| `auth_find_user(session_hash bytea) → bigint` | 鍵のハッシュから人の ID を返す。なければ NULL |
-| `auth_create_user(session_hash bytea, ip_hash bytea) → bigint` | その IP から 1 時間に作ったアカウントが上限（api.md §6）未満なら、users に 1 行入れて ID を返す。上限なら NULL。どちらでも auth_attempts に 1 行入れる |
-| `auth_restore(code_hash bytea, new_session_hash bytea, ip_hash bytea) → bigint` | その IP からの入力が上限未満で、コードが合えば、`session_hash` を置き換え、`recovery_code_hash` を NULL にして ID を返す。合わなければ NULL。どちらでも auth_attempts に 1 行入れる |
+| 関数 | 返すもの | 内容 |
+|------|----------|------|
+| `auth_find_user(session_hash bytea)` | `(user_id bigint, last_seen_at timestamptz)`。なければ 0 行 | 鍵のハッシュから人を探す。`last_seen_at` も返すので、「今日もう書いたか」（api.md §6）のために users を読み直さない |
+| `auth_create_user(session_hash bytea, ip_hash bytea)` | `(status text, user_id bigint, retry_after_seconds int)` | その IP から 1 時間に作ったアカウントが上限（api.md §6）未満なら、users に 1 行入れて `ok` と ID を返す。上限なら `rate_limited`。どちらでも auth_attempts に 1 行入れる |
+| `auth_restore(code_hash bytea, new_session_hash bytea, ip_hash bytea, current_user_id bigint, replace boolean)` | `(status text, user_id bigint, retry_after_seconds int, local_item_count int)` | 先に回数を数え、上限なら（コードが合っていても）`rate_limited`。合わなければ `not_found`。合っていて、`current_user_id` がコードの人と別で、その人に項目か達成があり、`replace` が false なら、何も変えずに `needs_confirm` とその件数を返す。それ以外で合えば、`session_hash` を置き換え、`recovery_code_hash` を NULL にして `ok` と ID を返す（古いアカウントを消すのはアプリ。api.md §6）。どの結果でも auth_attempts に 1 行入れる |
 
 ## 5. 保存期間と削除（docs/decisions/0040）
 | 消すもの | 条件 | 消し方 |
 |----------|------|--------|
 | アカウント（項目・達成・写真も） | `last_seen_at` から 5 年 | 毎日のジョブ |
-| 項目も達成もないアカウント | `created_at` から 30 日 | 毎日のジョブ |
+| 項目も達成もないアカウント | 項目も達成もなく、`last_seen_at` から 30 日（使い続けている人が項目を全部消しても、使っている間は消さない） | 毎日のジョブ |
 | events | `received_at` から 90 日 | 毎日のジョブ |
 | auth_attempts | `occurred_at` から 7 日 | 毎日のジョブ |
 | どの行からも指されていない写真のファイル | 置いてから 1 日 | 毎日のジョブ |
@@ -186,8 +191,11 @@ RLS の中では「鍵から人を探す」ことができない（まだ誰か�
 - 消した件数は、種類ごとにログ（`kind: cleanup_result`）に出す（metrics.md §8）
 
 ## 6. バックアップ（docs/decisions/0041）
-- Cloud SQL の自動バックアップを毎日・7 日分残し、時点復旧を有効にする。インスタンスを消してもバックアップを残す設定と、削除保護を付ける
-- 週 1 回（日曜 5 時〈日本時間〉）、本番の DB を別の入れ物（`optionlist-backups`、35 日で消える）に書き出す
+Cloud SQL の自動バックアップと時点復旧は、**インスタンス全体**が単位になる。インスタンスは確認用・今後のアプリと共用している（docs/decisions/0035）ので、戻すときに共用のインスタンスをその場で巻き戻さない。
+
+- 共用のインスタンスで、自動バックアップを毎日・7 日分残し、時点復旧を有効にする。インスタンスを消してもバックアップを残す設定と、削除保護を付ける（`npm run infra:check -- instance` で確かめる）
+- 週 1 回（日曜 5 時〈日本時間〉）、Cloud Run Job が `ol_migrator` で `pg_dump --enable-row-security` を流し、`optionlist_production` の DB だけを別の入れ物（`optionlist-backups`、35 日で消える）に書き出す（`--enable-row-security` を付けないと、RLS のある表で止まる。`ol_migrator` は `USING (true)` なので全員の行が出る）
 - 写真の入れ物は、消したものを 7 日間戻せる設定（soft delete）にする
-- 四半期に 1 回、`npm run ops:restore-drill` で一時的なインスタンスに戻して、表ごとの件数と、行と写真の食い違いを数える（metrics.md §8）。戻したときに食い違いがあれば、行のない写真は消し、写真のない行は `photo_filename` を NULL にする
-- 確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）
+- 戻すとき: 自動バックアップか時点復旧で**新しい一時的なインスタンス**を作り、そこから `optionlist_production` の DB だけを書き出して、本番の DB に入れ直す（ほかの DB は戻さない）。週 1 の書き出しから戻すときも、入れ直すのは `optionlist_production` だけ。戻したときに行と写真の食い違いがあれば、行のない写真は消し、写真のない行は `photo_filename` を NULL にする
+- 四半期に 1 回、`npm run ops:restore-drill` で、最新の自動バックアップを一時的なインスタンスに戻し、`ol_migrator` で `optionlist_production` の表ごとの件数と、行と写真の食い違いを数えて、本番と比べる（metrics.md §8）。**本番の件数が 0 のときは失敗にする**（数え方の誤りで、0 件どうしが一致して成功に見えるのを防ぐ）。終わったら一時的なインスタンスを消す
+- 一時的なインスタンスは、運営者だけが触る（確認用の環境ではない）。確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）

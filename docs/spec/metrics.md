@@ -123,6 +123,6 @@ CI では判定しない。アラートは Cloud Monitoring からメールで�
 | `client_error`（1 時間） | 50 件以下 | アラート（1 時間ごとのジョブが数えてログに出す） |
 | 削除のジョブ（data.md §5） | 毎日成功する | 失敗か、26 時間動いていなければアラート。消した件数は `kind: cleanup_result` のログで見る |
 | バックアップの書き出し（data.md §6） | 毎週成功する | 失敗か、8 日動いていなければアラート |
-| 復旧の訓練（`npm run ops:restore-drill`） | 四半期に 1 回。件数が本番と合い、行と写真の食い違いが 0 件 | `docs/ops/restore-drills.md` に書く |
+| 復旧の訓練（`npm run ops:restore-drill`） | 四半期に 1 回。新しい一時的なインスタンスに戻した `optionlist_production` の件数が本番と合い（本番が 0 件なら失敗）、行と写真の食い違いが 0 件 | `docs/ops/restore-drills.md` に書く |
 | 月の費用 | 3,000 円以内（docs/decisions/0035） | 予算の 50・90・100% でアラート |
 | 中身を見た回数 | 障害対応のときだけ | `docs/ops/data-access.md` に日付と理由を書く（docs/decisions/0043） |

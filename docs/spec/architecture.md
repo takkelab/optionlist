@@ -140,7 +140,7 @@ optionlist-web/
 - GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）
 - 出す前に、Cloud Run Job（`optionlist-<env>-migrate`）で `ol_migrator` としてマイグレーションを流す。失敗したら、新しいイメージは出さない
 - Cloud Run のサービスアカウントは環境ごとに分け、自分の環境の入れ物・秘密の値・Cloud SQL の接続だけを許す
-- 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <staging|production>` で決めたとおりかを確かめる（地域、台数、削除保護、自動バックアップと時点復旧、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、予算のアラート）
+- 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、ロールに BYPASSRLS がないこと、予算のアラート）
 
 ### 4.2 環境変数と秘密の値
 | 名前 | 内容 | 置き場所（確認用・本番） |
@@ -161,5 +161,5 @@ optionlist-web/
 - `APP_ENV` が `staging` か `production` なら、PortGuard（docs/decisions/0007）を使わず、`trust proxy` を 1 にし、Cookie に `Secure` を付ける
 - Express がビルド済みの frontend（`frontend/dist`）も配る。`/api` 以外で、ファイルに当たらないパスは `index.html` を返す（画面のルーティング）。名前にハッシュが付いたファイルは `Cache-Control: public, max-age=31536000, immutable`、`index.html` と Service Worker は `no-cache`
 - 画面の応答に付けるヘッダー（docs/decisions/0038）: `Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`、`Strict-Transport-Security: max-age=31536000`、`Referrer-Policy: same-origin`、`X-Content-Type-Options: nosniff`、`Permissions-Policy: camera=(), microphone=(), geolocation=()`。外のスクリプト・フォント・計測タグは読まない
-- 公開の段階（docs/decisions/0045）の 3 段目までは、`X-Robots-Tag: noindex` を付ける（`PUBLIC_INDEXING=true` で外す）
+- 公開の段階（docs/decisions/0045）の 2 段目が終わるまでは（3 段目の一般公開で外す）、検索エンジンに載せない。`PUBLIC_INDEXING` が `true` でなければ、すべての応答に `X-Robots-Tag: noindex` を付け、Express が `index.html` を返すときに `<meta name="robots" content="noindex">` を `<head>` に差し込む。ビルドした `index.html` には meta を入れない（確認用と本番は同じイメージを出すので、ビルドに入れると実行時に外せない）。`PUBLIC_INDEXING=true` にすると、どちらも付けない
 - ログは 1 行 1 つの JSON（`severity`・`message`・`kind`・`route`・`status`・`durationMs`）で標準出力に出す。Cookie・復旧コード・タイトル・写真の名前は出さない（docs/decisions/0042）

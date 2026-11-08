@@ -127,21 +127,21 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm --prefix backend run test:file -- tests/api/achievement-photos.test.ts tests/api/photo-files-contract.test.ts` が通る（EXIF が残らない、`private`・`Vary: Cookie`・CSP、上限で 429、他人の写真が 404）
 
 ### R6. PWA と、ポリシー・規約のページ（docs/decisions/0032・0039・0045）
-- vite-plugin-pwa（画面の殻だけ）、manifest とアイコン、`/privacy`・`/terms`、追加ダイアログのポリシーへのリンク、`noindex` の meta（screens.md §2・§10）
+- vite-plugin-pwa（JS・CSS・アイコンだけを先にキャッシュし、`index.html` は通信を先に試す）、manifest とアイコン、`/privacy`・`/terms`、追加ダイアログのポリシーへのリンク（screens.md §2・§10）。noindex は R7 で Express が差し込む（ビルドには入れない）
 - 完了の条件
   - 共通の条件（初期表示の JS サイズが 200KB 以内のまま）
   - `npm --prefix frontend run build` のあと、`test -f frontend/dist/manifest.webmanifest && test -f frontend/dist/sw.js`
-  - `grep -q 'name="robots" content="noindex"' frontend/dist/index.html`
-  - `npm run test:e2e -- pwa.spec legal.spec` が通る（testing.md §5 の 14。`/api` がキャッシュされないことを含む）
+  - `grep -c noindex frontend/dist/index.html` が 0（ビルドに noindex を入れていない。architecture.md §4.3）
+  - `npm run test:e2e -- pwa.spec legal.spec` が通る（testing.md §5 の 14。`/api` がキャッシュされないこと、`index.html` を通信できるときは取り直すことを含む）
 
 ### R7. 本番用のコンテナ（docs/decisions/0035）
-- `Dockerfile`（frontend をビルドし、backend が `frontend/dist` を配る）。画面のセキュリティのヘッダーと CSP、キャッシュのヘッダー、`X-Robots-Tag`、`APP_ENV` による切り替え（PortGuard を使わない、`trust proxy`、`Secure`）（architecture.md §4.3）
+- `Dockerfile`（frontend をビルドし、backend が `frontend/dist` を配る）。画面のセキュリティのヘッダーと CSP、キャッシュのヘッダー、`PUBLIC_INDEXING` による `X-Robots-Tag` と `index.html` への noindex の meta の差し込み、`APP_ENV` による切り替え（PortGuard を使わない、`trust proxy`、`Secure`）（architecture.md §4.3）
 - E2E を、Express が画面も配る形に変える（testing.md §5）
 - CI に、イメージを作ってスモークテストするジョブを足す（testing.md §6 の 8）
 - 完了の条件
   - 共通の条件（E2E が CSP の効いた状態で通る）
   - `docker build -t optionlist:local .` が通る（CI の中で）
-  - `npm run smoke:image -- optionlist:local` が通る（`/api/health` が 200、`/` に CSP と `X-Robots-Tag: noindex` が付く、`/api/metrics` がトークンなしで 404、`/suggestions/1` が `index.html` を返す）
+  - `npm run smoke:image -- optionlist:local` が通る（`/api/health` が 200、`/` に CSP と `X-Robots-Tag: noindex` が付き、本文に noindex の meta が入る、`PUBLIC_INDEXING=true` で起動し直すとヘッダーも meta も消える、`/api/metrics` がトークンなしで 404、`/suggestions/1` が `index.html` を返す）
 
 ### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036）
 - `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
@@ -150,10 +150,10 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
 - 完了の条件
   - 共通の条件
-  - `npm run infra:check -- staging` と `npm run infra:check -- production` が終了コード 0
+  - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、どの `ol_*` ロールも BYPASSRLS を持たず、`ol_app` のポリシーがあることも SQL で確かめる）
   - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
   - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
-  - `git grep -n -E "private_key|BEGIN (RSA )?PRIVATE KEY" -- .` が 0 件（鍵をリポジトリに置いていない）
+  - `git grep -n -E "private_key|BEGIN (RSA )?PRIVATE KEY" -- . ":!docs"` が 0 件（鍵をリポジトリに置いていない。この行のような文書は除く）
   - 確認用で、手で 1 件追加して写真を付け、別のブラウザから見えないことを確かめる（PR 本文に書く）
 
 ### R9. 削除のジョブ（docs/decisions/0040）
@@ -166,13 +166,13 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm run infra:check -- production` が Scheduler のジョブ（ENABLED、毎日 4 時）も確かめて終了コード 0
 
 ### R10. バックアップ・監視・利用状況（docs/decisions/0041・0042・0043）
-- 週 1 の書き出しの Job と入れ物、写真の soft delete、`npm run ops:restore-drill -- <env>`
+- 週 1 の書き出しの Job（`ol_migrator` で `pg_dump --enable-row-security`、`optionlist_production` だけ）と入れ物、写真の soft delete、`npm run ops:restore-drill`（新しい一時的なインスタンスに戻して `optionlist_production` を数える。data.md §6）
 - アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
 - 集計のビュー（`usage_*`）と `ol_metrics`、`npm run metrics:usage` を 1 人あたりの指標に（metrics.md §6）
 - 完了の条件
   - 共通の条件
-  - `npm run infra:check -- production` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護・soft delete・アラートのポリシーと死活監視・予算のアラートも確かめて終了コード 0
-  - `npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` に結果（件数と食い違い 0 件）が 1 行増える
+  - `npm run infra:check -- instance` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護を確かめ、`npm run infra:check -- production` が、写真の soft delete・書き出しの Job と Scheduler・アラートのポリシーと死活監視・予算のアラートを確かめて、どちらも終了コード 0
+  - `npm run ops:restore-drill` が終了コード 0 で、`docs/ops/restore-drills.md` に結果（`optionlist_production` の表ごとの件数が本番と一致し、0 件ではなく、食い違いが 0 件）が 1 行増える。終わったあと `gcloud sql instances list --filter="name~restore-drill"` が 0 件（一時的なインスタンスを消した）
   - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
   - `METRICS_DATABASE_URL=<確認用の接続先> npm run metrics:usage` が、metrics.md §6 のすべての指標を出す
   - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
@@ -184,6 +184,6 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - 完了の条件
   - 共通の条件
   - `grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0（終わっていない項目がない）
-  - `docs/ops/restore-drills.md` に、本番の訓練の記録が 1 回以上ある（`grep -c production docs/ops/restore-drills.md` が 1 以上）
+  - `docs/ops/restore-drills.md` に、本番の訓練の記録が 1 回以上ある（`grep -c optionlist_production docs/ops/restore-drills.md` が 1 以上）
   - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
   - `npm run infra:check -- production` が終了コード 0
