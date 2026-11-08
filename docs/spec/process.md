@@ -172,7 +172,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - 完了の条件
   - 共通の条件
   - `npm run infra:check -- instance` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護を確かめ、`npm run infra:check -- production` が、写真の soft delete・書き出しの Job と Scheduler・アラートのポリシーと死活監視・予算のアラートと、`rls-checks.sql`（`ol_incident` が SELECT だけ、強いロールのメンバーになっているログインできるロールが 0 件、を含む。testing.md §7）を確かめて、どちらも終了コード 0
-  - 確認用で自分のデータ（項目・達成・写真）を作ったうえで、`npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` の表に `| optionlist_staging |` で結果が `成功` の行（data.md §6 の 4 の条件: 記録した ID がすべて戻り、空ではなく、食い違いが 0 件）が 1 行増える（`grep -c "| optionlist_staging |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上）。本番は、まだ利用者の行がないので、ここでは訓練しない（R11 の 1 段目で行う。data.md §6）
+  - 確認用で自分のデータ（項目・達成・写真）を作ったうえで、`npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` の表に `| optionlist_staging |` で結果が `成功` の行（data.md §6 の 3・5 の条件: バックアップの前後に残っていた ID がすべて戻り、空ではなく、食い違いが 0 件）が 1 行増える（`grep -c "| optionlist_staging |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上）。本番は、まだ利用者の行がないので、ここでは訓練しない（R11 の 1 段目で行う。data.md §6）
   - 訓練のあと `gcloud sql instances list --filter="name:restore-drill-*" --format="value(name)"` が何も出さない（一時的なインスタンス〈`restore-drill-<日時>`。data.md §6〉を消した）
   - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
   - `METRICS_DATABASE_URL=<確認用の接続先> npm run metrics:usage` が、metrics.md §6 のすべての指標を出す
