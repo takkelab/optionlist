@@ -3,7 +3,7 @@
 [SPEC.md](../../SPEC.md) の一部。
 
 ## 1. 進め方
-- 実装は 1 ステップ（§4）＝ 1 ブランチ ＝ 1 PR で進める
+- 実装は 1 ステップ（§4・§5）＝ 1 ブランチ ＝ 1 PR で進める。§4 は提出版（自分 1 人・手元だけ）までの順番で、実装済み。一般向けのリリースは §5 の順に進める
 - 各ステップは新しいセッションで始め、Plan Mode で計画してから実装する。読むのは SPEC.md と、目次の「読むとき」に当てはまる章だけでよい
 - PR をマージできるのは次をすべて満たしたとき
   - CI がすべて通る（metrics.md の「CI 失敗」の指標を満たす）
@@ -39,7 +39,7 @@ AI が何かに詰まり、力ずくで解決したときは「解決したか�
 - 書き方は [docs/decisions/README.md](../decisions/README.md) のテンプレートに従う。1 件 1 ファイル、数行でよい
 - SPEC の修正と decisions の追加は同じ PR で行う。`metrics.config.json` を変えた PR に decisions の追加がなければ CI で失敗させる
 
-## 4. 実装の順番
+## 4. 実装の順番（提出版。実装済み）
 ステップ 1 は量が多いので 3 つに分ける。
 
 1. **計測とハーネスの土台**
@@ -59,3 +59,131 @@ AI が何かに詰まり、力ずくで解決したときは「解決したか�
 10. 利用イベントの送信と `npm run metrics:usage`
 
 各ステップで、そのステップに関係する metrics.md の指標をすべて満たすこと。
+
+## 5. リリースの実装の順番
+一般向けに公開するための順番（docs/decisions/0032〜0046）。§1 の進め方（1 ステップ ＝ 1 ブランチ ＝ 1 PR、Plan Mode、reviewer、`npm run pr:merge`、使用量の記録）はそのまま使う。
+各ステップの「完了の条件」はコマンドで確かめられる形で書く。PR 本文に、そのコマンドと結果（終了コード・件数）を貼る。`<確認用のドメイン>`・`<本番のドメイン>` は R8 で決めたものに置き換える。
+
+### 共通の完了の条件（どのステップでも）
+```sh
+npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
+  && npm --prefix backend run test:migrations && npm run test:e2e && npm run metrics:check
+```
+- CI（`quality`・`pr-check`）がすべて緑で、`npm run pr:merge -- <PR 番号>` でマージできること
+- そのステップで変えた仕様の章と docs/decisions/ が、同じ PR で直っていること（§3）
+- CLAUDE.md の Commands・Gotchas が、そのステップのあとのやり方に合っていること
+
+### R1. Postgres に移る（docs/decisions/0034・0044）
+- 先に、手元の MySQL のダンプと `backend/uploads/` をリポジトリの外に残す（docs/decisions/0044）。提案のマスターデータを `backend/tests/migrations/fixtures/suggestions-mysql-final.json` に書き出す（MySQL を消す前に 1 回だけ）
+- `pg` に乗り換え、MySQL の 13 本のマイグレーションを、Postgres の基準のマイグレーション 1 本にまとめ直す（ユーザーはまだ足さない。表の形は今のまま、型だけ data.md §1 に合わせる）
+- `?` を `$1` に、`INSERT … SET ?` を列を並べる形に、エラーコードを SQLSTATE（`23505`・`23503`）に直す。`date` を文字列のまま受ける。接続ごとに `TimeZone=UTC`
+- CI のサービスコンテナを `postgres:17` に。マイグレーション・性能のテストを Postgres 向けに（`EXPLAIN` の `Seq Scan`）
+- `.claude/settings.json` の Stop hook を node のスクリプト（`scripts/stop-hook.ts`）にし、依存（ルート・backend・frontend の `node_modules`）がなければ「CLAUDE.md の初回の手順を流す」と出して止める（docs/harness/incidents.md #18）
+- 完了の条件
+  - 共通の条件
+  - `scripts/tests/stop-hook.test.ts` が通る（`npm run test:scripts`。依存がないフォルダでメッセージを出して止まる）
+  - `git grep -n -i "mysql" -- backend/src backend/package.json package.json .github scripts` が 0 件（終了コード 1）
+  - `ls backend/db/migrations | wc -l` が 1
+  - `npm --prefix backend run test:file -- tests/migrations/migrations.test.ts` が通り、その中で `suggestions-mysql-final.json` と ID・中身が一致する
+
+### R2. 匿名アカウントとデータの分離（docs/decisions/0033・0034・0046）
+- users・auth_attempts の表、options・achievements の `user_id`、(user_id, suggestion_id) の UNIQUE、複合外部キー、(user_id, …) のインデックス
+- ロール（`ol_migrator`・`ol_app`・`ol_cleanup`・`ol_metrics`・`ol_definer`）を作るスクリプト（`npm --prefix backend run db:roles` / `db:roles:test`）、RLS のポリシー、認証の関数（data.md §4）
+- `UserScopedDatabase` とセッションの middleware（Cookie、最初の `POST /api/options` でアカウントを作る、1 日 1 回の `last_seen_at`）。アカウントの作成の回数の制限
+- lint の L13（`tools/lint-rules/rules/user-scoped-db.ts` とテスト）、マイグレーションの RLS のテスト、API の分離テスト（testing.md §7）、metrics.md §2 の 2 つの指標を `metrics.config.json` に足す
+- 性能用データを複数ユーザーにする（metrics.md §1）
+- 完了の条件
+  - 共通の条件（`metrics:check` が分離テストと RLS の付け忘れを 0 件と判定する）
+  - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts tests/api/isolation.test.ts` が通る
+  - `node --test tools/lint-rules/tests/user-scoped-db.test.ts` が通る
+  - `git grep -n "set_config" -- backend/src ":!backend/src/infra"` が 0 件
+  - `git grep -n "from \"pg\"" -- backend/src ":!backend/src/infra"` が 0 件
+  - `npm run test:e2e -- isolation.spec` が通る（testing.md §5 の 11）
+
+### R3. 復旧コードとすべてのデータを消す（docs/decisions/0033・0039）
+- `GET /api/account`・`POST /api/account/recovery-code`・`POST /api/account/restore`・`DELETE /api/account`（api.md §6）、復旧コードの入力の回数の制限
+- 設定のシート、復旧コードの表示・入力、控えるよう勧めるカード、すべてのデータを消す（screens.md §9）
+- 完了の条件
+  - 共通の条件
+  - `npm --prefix backend run test:file -- tests/api/account.test.ts` が通る（testing.md §2 のアカウント・復旧コード・回数の制限・すべて消す）
+  - `npm run test:e2e -- account.spec` が通る（testing.md §5 の 12・13）
+  - 分離テストのケースの表に `/api/account` の 4 つのルートがある（`npm --prefix backend run test:file -- tests/api/isolation.test.ts` が通る）
+
+### R4. API のセキュリティの土台（docs/decisions/0038・0042）
+- Origin の確認、JSON の `Content-Type` の確認、書き込みの回数の制限、`/api/metrics` のトークン、`/api/health/db` の `message` を隠す、500 の `message`、API の `Cache-Control: no-store`
+- JSON のログ（`kind`）。Cookie・復旧コード・タイトルをログに出さない
+- Dependabot（`.github/dependabot.yml`、週 1 回）
+- 完了の条件
+  - 共通の条件
+  - `npm --prefix backend run test:file -- tests/api/security.test.ts` が通る（testing.md §2 のセキュリティ）
+  - `test -f .github/dependabot.yml`
+  - `npm --prefix backend run test:file -- tests/unit/json-logger.test.ts` が通り、その中で Cookie・復旧コードを渡しても出力に含まれないことを確かめる
+
+### R5. 写真を Cloud Storage へ（docs/decisions/0037）
+- `GcsPhotoFiles`（`PHOTO_BUCKET` があれば使う）、写真の配信で持ち主を確かめる、配信のヘッダー、sharp で作り直す、1 人あたりの上限と保存の回数の制限、`achievements.photo_bytes`
+- CI に fake-gcs-server のサービスコンテナを足し、`GcsPhotoFiles` を `LocalPhotoFiles` と同じテストで確かめる
+- 完了の条件
+  - 共通の条件（`metrics:check` で、アップロードの p95 が 300ms 以内。超えたら新しい記録で目標を見直す）
+  - `npm --prefix backend run test:file -- tests/api/achievement-photos.test.ts tests/api/photo-files-contract.test.ts` が通る（EXIF が残らない、`private`・`Vary: Cookie`・CSP、上限で 429、他人の写真が 404）
+
+### R6. PWA と、ポリシー・規約のページ（docs/decisions/0032・0039・0045）
+- vite-plugin-pwa（画面の殻だけ）、manifest とアイコン、`/privacy`・`/terms`、追加ダイアログのポリシーへのリンク、`noindex` の meta（screens.md §2・§10）
+- 完了の条件
+  - 共通の条件（初期表示の JS サイズが 200KB 以内のまま）
+  - `npm --prefix frontend run build` のあと、`test -f frontend/dist/manifest.webmanifest && test -f frontend/dist/sw.js`
+  - `grep -q 'name="robots" content="noindex"' frontend/dist/index.html`
+  - `npm run test:e2e -- pwa.spec legal.spec` が通る（testing.md §5 の 14。`/api` がキャッシュされないことを含む）
+
+### R7. 本番用のコンテナ（docs/decisions/0035）
+- `Dockerfile`（frontend をビルドし、backend が `frontend/dist` を配る）。画面のセキュリティのヘッダーと CSP、キャッシュのヘッダー、`X-Robots-Tag`、`APP_ENV` による切り替え（PortGuard を使わない、`trust proxy`、`Secure`）（architecture.md §4.3）
+- E2E を、Express が画面も配る形に変える（testing.md §5）
+- CI に、イメージを作ってスモークテストするジョブを足す（testing.md §6 の 8）
+- 完了の条件
+  - 共通の条件（E2E が CSP の効いた状態で通る）
+  - `docker build -t optionlist:local .` が通る（CI の中で）
+  - `npm run smoke:image -- optionlist:local` が通る（`/api/health` が 200、`/` に CSP と `X-Robots-Tag: noindex` が付く、`/api/metrics` がトークンなしで 404、`/suggestions/1` が `index.html` を返す）
+
+### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036）
+- `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
+- `npm run infra:check -- <env>`（architecture.md §4.1 の設定を gcloud で読んで確かめる）
+- `.github/workflows/deploy.yml`（main で確認用へ、Environment `production` の承認で本番へ。同じイメージ）
+- 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
+- 完了の条件
+  - 共通の条件
+  - `npm run infra:check -- staging` と `npm run infra:check -- production` が終了コード 0
+  - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
+  - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
+  - `git grep -n -E "private_key|BEGIN (RSA )?PRIVATE KEY" -- .` が 0 件（鍵をリポジトリに置いていない）
+  - 確認用で、手で 1 件追加して写真を付け、別のブラウザから見えないことを確かめる（PR 本文に書く）
+
+### R9. 削除のジョブ（docs/decisions/0040）
+- `backend/src/jobs/cleanup.ts`（data.md §5 の 5 種類）、`ol_cleanup` での接続、Cloud Run Job と Cloud Scheduler（毎日 4 時）、消した件数のログ
+- 設定のシートに「5 年間使わないと、データは消えます」（screens.md §9）
+- 完了の条件
+  - 共通の条件
+  - `npm --prefix backend run test:file -- tests/api/cleanup-job.test.ts` が通る（時計をフェイクで進め、5 年・30 日・90 日・7 日・行のない写真の 1 日の境目の前後を確かめる。期限前の人の行が残る）
+  - `gcloud run jobs execute optionlist-staging-cleanup --region asia-northeast1 --wait` が成功する
+  - `npm run infra:check -- production` が Scheduler のジョブ（ENABLED、毎日 4 時）も確かめて終了コード 0
+
+### R10. バックアップ・監視・利用状況（docs/decisions/0041・0042・0043）
+- 週 1 の書き出しの Job と入れ物、写真の soft delete、`npm run ops:restore-drill -- <env>`
+- アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
+- 集計のビュー（`usage_*`）と `ol_metrics`、`npm run metrics:usage` を 1 人あたりの指標に（metrics.md §6）
+- 完了の条件
+  - 共通の条件
+  - `npm run infra:check -- production` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護・soft delete・アラートのポリシーと死活監視・予算のアラートも確かめて終了コード 0
+  - `npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` に結果（件数と食い違い 0 件）が 1 行増える
+  - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
+  - `METRICS_DATABASE_URL=<確認用の接続先> npm run metrics:usage` が、metrics.md §6 のすべての指標を出す
+  - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
+
+### R11. 公開（docs/decisions/0045）
+- `docs/ops/launch-checklist.md` に、自分だけの 2 週間・知人数人・一般公開のそれぞれの確認の項目を `- [ ]` で書き、終わったものを `- [x]` にする
+- 実機での結果（iPhone のホーム画面に追加したときに同じアカウントか）を書き、違ったら screens.md §9 と docs/decisions/ を直す
+- プライバシーポリシー・利用規約の文面を確定し、`PUBLIC_INDEXING=true` にして `noindex` を外す
+- 完了の条件
+  - 共通の条件
+  - `grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0（終わっていない項目がない）
+  - `docs/ops/restore-drills.md` に、本番の訓練の記録が 1 回以上ある（`grep -c production docs/ops/restore-drills.md` が 1 以上）
+  - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
+  - `npm run infra:check -- production` が終了コード 0
