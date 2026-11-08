@@ -18,6 +18,7 @@
 - up 後のテーブル・列・インデックス・外部キーが期待どおりであること
 - マスターデータ（提案とテーマ・タグ。data.md §2）が入っていること。どの提案にもタグが 2〜4 個付き、どのタグも 3 件以上の提案に付いていること。どの月にも季節の提案が 5 件以上あること。季節の CHECK 制約が効くこと。基準のマイグレーションのマスターデータが、MySQL 時代の最後の状態（`backend/tests/migrations/fixtures/suggestions-mysql-final.json`）と ID・中身まで一致すること（docs/decisions/0044）
 - RLS・ロール・認証の関数が data.md §4 のとおりであること（詳しくは §7）
+- 認証の関数・集計のビューを作るマイグレーションが、`ol_migrator` で流して up → down → up まで通り、関数・ビューの持ち主が `ol_definer` になること（`SET ROLE ol_definer` で包み忘れると、作り直し・down で「must be owner」になって落ちる。data.md §4）
 - 提案を入れ替えるマイグレーションで、旧提案に付いていた options の `suggestion_id` が NULL になり、options の行は残ること
 - 新しいマイグレーションを追加したら、このテストも必ず追加・更新する
 
