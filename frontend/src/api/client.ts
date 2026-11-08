@@ -1,6 +1,18 @@
 import { isAxiosError } from 'axios'
 import type { AxiosInstance } from 'axios'
-import type { Achievement, Event, Option, OptionDetail, OptionStatus, SuggestionCatalog, SuggestionDetail } from '../../../shared/types'
+import type {
+  AccountStatus,
+  Achievement,
+  Event,
+  Option,
+  OptionDetail,
+  OptionStatus,
+  RecoveryCode,
+  RestoreConflict,
+  RestoreRequest,
+  SuggestionCatalog,
+  SuggestionDetail,
+} from '../../../shared/types'
 
 // PATCH /api/options/:id で変えるもの。plannedOn は null で消す（api.md §2）
 export type OptionUpdate = { title?: string; status?: OptionStatus; plannedOn?: string | null }
@@ -36,7 +48,26 @@ export interface EventsApi {
   send(events: Event[]): Promise<void>
 }
 
-export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi {
+// 復旧コードの入力の結果（screens.md §9）。合わない・回数の制限・確認が要るは画面で出し分けるので、例外ではなく値で返す
+export type RestoreOutcome =
+  // account は移った先のアカウントの状態
+  | { kind: 'restored'; account: AccountStatus }
+  | { kind: 'wrong' }
+  | { kind: 'limited' }
+  // この端末の別のアカウントのデータが消える。localItemCount はその項目の件数
+  | { kind: 'conflict'; localItemCount: number }
+
+// アカウント（api.md §6、screens.md §9）
+export interface AccountApi {
+  status(): Promise<AccountStatus>
+  // 新しい復旧コード（ABCD-EFGH-JKMN-PQRS）。前のコードは使えなくなる
+  issueRecoveryCode(): Promise<string>
+  restore(code: string, replace: boolean): Promise<RestoreOutcome>
+  // すべてのデータを消す
+  removeAll(): Promise<void>
+}
+
+export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi, AccountApi {
   readonly #http: AxiosInstance
 
   constructor(http: AxiosInstance) {
@@ -114,6 +145,38 @@ export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi {
 
   async send(events: Event[]): Promise<void> {
     await this.#http.post('/events', { events })
+  }
+
+  async status(): Promise<AccountStatus> {
+    const res = await this.#http.get<AccountStatus>('/account')
+    return res.data
+  }
+
+  async issueRecoveryCode(): Promise<string> {
+    const res = await this.#http.post<RecoveryCode>('/account/recovery-code')
+    const { code } = res.data
+    return code
+  }
+
+  async restore(code: string, replace: boolean): Promise<RestoreOutcome> {
+    const request: RestoreRequest = { code, replace }
+    try {
+      const res = await this.#http.post<AccountStatus>('/account/restore', request)
+      return { kind: 'restored', account: res.data }
+    } catch (error) {
+      const status = this.#statusOf(error)
+      if (status === 404) return { kind: 'wrong' }
+      if (status === 429) return { kind: 'limited' }
+      if (status !== 409 || !isAxiosError<RestoreConflict>(error)) throw error
+      const { response } = error
+      if (response === undefined) throw error
+      const { localItemCount } = response.data
+      return { kind: 'conflict', localItemCount }
+    }
+  }
+
+  async removeAll(): Promise<void> {
+    await this.#http.delete('/account')
   }
 
   #statusOf(error: unknown): number | undefined {

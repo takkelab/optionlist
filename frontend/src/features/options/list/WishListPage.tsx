@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { PageHeader } from '../../../components/PageHeader'
+import { RecoveryPromptCard } from '../../account/RecoveryPromptCard'
+import { SettingsButton } from '../../account/SettingsButton'
 import styles from '../OptionList.module.css'
 import { OptionSheet } from '../OptionSheet'
 import { StatusSwitch } from '../StatusSwitch'
@@ -19,7 +21,8 @@ export function WishListPage() {
 
   return (
     <>
-      <PageHeader title="やりたいこと" center={<StatusSwitch />} />
+      <PageHeader title="やりたいこと" center={<StatusSwitch />} end={<SettingsButton />} />
+      {options !== null && <RecoveryPromptCard pendingCount={options.length} sheetOpen={opened !== null} />}
       {options !== null && options.length >= 2 && <TodayPick options={options} onOpen={open} />}
       {options !== null && options.length === 0 && (
         <div className={styles.empty}>

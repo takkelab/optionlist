@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type IconName = 'plus' | 'list' | 'sparkle' | 'back' | 'next' | 'shuffle' | 'more' | 'edit' | 'filter' | 'camera' | 'grip'
+export type IconName = 'plus' | 'list' | 'sparkle' | 'back' | 'next' | 'shuffle' | 'more' | 'edit' | 'filter' | 'camera' | 'grip' | 'settings'
 
 // アイコンはインライン SVG で自前で持つ（docs/decisions/0010）。線の色は文字色（currentColor）に合わせる
 const PATHS: Record<IconName, ReactNode> = {
@@ -21,6 +21,14 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   // 並び替えの取っ手（⋮⋮）
   grip: <path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" strokeWidth={3} />,
+  // 設定の歯車（⚙。screens.md §9）
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5v2.6M12 18.9v2.6M21.5 12h-2.6M5.1 12H2.5M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1L5.3 5.3" />
+      <circle cx="12" cy="12" r="6.9" />
+    </>
+  ),
 }
 
 export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {

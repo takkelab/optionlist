@@ -62,8 +62,10 @@ export class ListPrefetch implements ListLoader {
     this.#loaded.set(status, { list, at: this.#now() })
   }
 
+  // 読み始めておいたものも捨てる（アカウントが入れ替わったとき、前のアカウントの一覧を load で返さない）
   forget(status: OptionStatus): void {
     this.#loaded.set(status, { list: null, at: this.#now() })
+    this.#reading.delete(status)
   }
 
   // 読み終わったら、最近読んだ一覧として覚える（読み始めた時刻で古さを測り、後から届いた古い結果では上書きしない）。

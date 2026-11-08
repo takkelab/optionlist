@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { AccountScreen } from '../support/AccountScreen'
 import { CompletionScreen } from '../support/CompletionScreen'
 import { OptionSeed } from '../support/OptionSeed'
 import { PgTestData } from '../support/TestData'
@@ -111,6 +112,30 @@ test('各画面の LCP とタップ領域を測る', async ({ page }) => {
   await completion.pickPhotoFromHistory('写真を付ける')
   await expect(completion.historyPhotos()).toHaveCount(1)
   smallTapTargets.push(...(await probe.smallTapTargets(page, '達成した日（写真あり）')))
+
+  // 設定のシートと、その上のダイアログ（screens.md §9）。やりたいことが 5 件以上あるので、一覧の上に勧めるカードも出る
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: '復旧コードを控える' })).toBeVisible()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '/（復旧コードを勧めるカード）')))
+  const account = new AccountScreen(page)
+  const settings = await account.openSettings()
+  await expect(settings.getByRole('button', { name: '復旧コードを表示する' })).toBeVisible()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '設定のシート')))
+  await account.press(settings, '復旧コードを入れる')
+  const restore = page.getByRole('dialog', { name: '復旧コードを入れる' })
+  await restore.waitFor()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '設定のシート（復旧コードを入れる）')))
+  await account.press(restore, 'キャンセル')
+  await restore.waitFor({ state: 'hidden' })
+  await account.press(settings, '復旧コードを表示する')
+  const shown = page.getByRole('dialog', { name: '復旧コード' })
+  await shown.waitFor()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '設定のシート（復旧コード）')))
+  await account.press(shown, '閉じる')
+  await shown.waitFor({ state: 'hidden' })
+  await account.press(settings, '🗑 すべてのデータを消す')
+  await expect(page.getByRole('button', { name: 'すべて消す', exact: true })).toBeVisible()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '設定のシート（すべて消す確認）')))
 
   probe.save({ lcpSec, smallTapTargets })
 })

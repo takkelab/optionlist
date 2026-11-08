@@ -65,3 +65,35 @@
     transition: none;
   }
 }
+
+/* シートの中身（項目のシート・設定のシート）。上の持ち手から下へ引くと閉じる（components/useSheetSwipe.ts） */
+.body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  /* 一番上で下へ引いたときに中身を跳ねさせない（シートを引く動きにする。screens.md §3） */
+  overscroll-behavior: none;
+}
+
+/* 上の持ち手。ここを下へ引くと閉じる */
+.grip {
+  position: sticky;
+  top: 0;
+  min-height: var(--space-6);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--space-2);
+  background: var(--color-bg);
+  touch-action: none;
+}
+
+.handle {
+  width: 40px;
+  height: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-border);
+}

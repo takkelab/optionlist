@@ -1,0 +1,156 @@
+/* 設定のシート（screens.md §9）。中身の高さに合わせる（項目のシートのように 9 割まで伸ばさない） */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-md);
+}
+
+/* 引き継いだあと、新しいコードを控えてほしいときの印 */
+.mark {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.markNote {
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+}
+
+/* 主ボタン（AI に相談と同じ形） */
+.action {
+  align-self: flex-start;
+  min-height: var(--tap-size);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* 枠だけのボタン（前の端末から引き継ぐ） */
+.secondary {
+  align-self: flex-start;
+  min-height: var(--tap-size);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.links {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* 一番下の目立たない行（項目のシートの削除と同じ色） */
+.removeAll {
+  min-height: var(--tap-size);
+  margin-top: var(--space-2);
+  border: none;
+  background: none;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+/* 復旧コード。等幅で大きく出し、まとめて選べる */
+.code {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: var(--font-size-xl);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-align: center;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+/* 復旧コードの入力欄。16px 未満だと、iPhone で押したときに画面が拡大する */
+.codeInput {
+  min-height: var(--tap-size);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: inherit;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: var(--font-size-md);
+  letter-spacing: 0.05em;
+}
+
+.codeInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.failed {
+  background: var(--color-danger);
+}
+
+/* やりたいリストの一番上の、復旧コードを控えるよう勧める小さなカード */
+.prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  font-size: var(--font-size-sm);
+}
+
+.promptActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.later {
+  min-width: var(--tap-size);
+  min-height: var(--tap-size);
+  padding: 0 var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.keep {
+  min-height: var(--tap-size);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: bold;
+  cursor: pointer;
+}
