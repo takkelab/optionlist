@@ -199,6 +199,11 @@ Cloud SQL の自動バックアップと時点復旧は、**インスタンス�
 - 週 1 回（日曜 5 時〈日本時間〉）、Cloud Run Job が `ol_migrator` で `pg_dump --enable-row-security` を流し、`optionlist_production` の DB だけを別の入れ物（`optionlist-backups`、35 日で消える）に書き出す（`--enable-row-security` を付けないと、RLS のある表で止まる。`ol_migrator` は `USING (true)` なので全員の行が出る）
 - 写真の入れ物は、消したものを 7 日間戻せる設定（soft delete）にする
 - 戻すとき: 自動バックアップか時点復旧で**新しい一時的なインスタンス**を作り、そこから `optionlist_production` の DB だけを書き出して、本番の DB に入れ直す（ほかの DB は戻さない）。週 1 の書き出しから戻すときも、入れ直すのは `optionlist_production` だけ。戻したときに行と写真の食い違いがあれば、行のない写真は消し、写真のない行は `photo_filename` を NULL にする
-- 四半期に 1 回、`npm run ops:restore-drill -- <staging|production>` で、最新の自動バックアップを一時的なインスタンス（名前は `restore-drill-<YYYYMMDDHHmm>`。Cloud SQL は消したインスタンスの名前をしばらく使い直せないので、毎回変える）に戻し、`ol_migrator` で `optionlist_<env>` の利用者の表（users・options・achievements）の件数と、行と写真の食い違いを数えて、今の `optionlist_<env>` と比べる（metrics.md §8）。**今の利用者の表が 0 件のときは失敗にする**（数え方の誤りで、0 件どうしが一致して成功に見えるのを防ぐ。マスターデータは件数に含めない）。終わったら一時的なインスタンスを消す。結果は `docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの件数 | 食い違い | 結果 |`）に 1 行足す
+- 四半期に 1 回、`npm run ops:restore-drill -- <staging|production>` で復旧の訓練をする。利用者が書き続けていても判定できるよう、件数ではなく ID の集合で比べる（metrics.md §8）
+  1. `ol_migrator` で、今の `optionlist_<env>` の利用者の表（users・options・achievements）の ID の集合 S と、表ごとの最大の ID を記録する。**S が空なら失敗にする**（数え方の誤りで、空どうしが一致して成功に見えるのを防ぐ。マスターデータは数えない）
+  2. その場でバックアップを取る（`gcloud sql backups create`）。最新の自動バックアップは 1 日 1 回なので、それを戻すと、その後に書かれた行がないのは当たり前になってしまう
+  3. そのバックアップを一時的なインスタンス（名前は `restore-drill-<YYYYMMDDHHmm>`。Cloud SQL は消したインスタンスの名前をしばらく使い直せないので、毎回変える）に戻し、`optionlist_<env>` の ID の集合 R を読む
+  4. 成功の条件: S のすべてが R にあり、R にしかない ID は 1 で記録した最大の ID より大きい（記録とバックアップの間に作られた行）。あわせて、戻した DB の中で行と写真の食い違いを数え、0 件であること。1 と 2 の間に行が消えると S が R に入らないことがあるので、削除のジョブ（毎日 4 時）の前後 1 時間は流さない。それでも合わなければ、1 回だけやり直す
+  5. 一時的なインスタンスとその場で取ったバックアップを消し、`docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの ID の数 | 食い違い | 結果 |`）に 1 行足す。結果の列は `成功` か `失敗` のどちらかで、`ops:restore-drill` がこの文字で書く
 - 訓練を確認用（`staging`）でもできるのは、仕組みを本番の前に確かめるため（R10）。本番の訓練は、本番に利用者の行が入ってから（公開の 1 段目。docs/decisions/0045）行い、その後は四半期ごとに本番で行う
 - 一時的なインスタンスは、運営者だけが触る（確認用の環境ではない）。確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）
