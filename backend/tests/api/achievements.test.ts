@@ -7,18 +7,23 @@ import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/options/:id/achievements（api.md §2、testing.md §2）
-const pool = new PgPoolFactory(process.env, console).create();
+// 後始末は ol_migrator（pool）、アプリは ol_app（appPool。testing.md §0）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 const data = new TestDatabase(pool);
-const api = new OptionsApiClient(new TestApp({ db: new PgDatabase(pool, new PromMetrics()) }).build());
+const app = new TestApp({ db: new PgDatabase(appPool, new PromMetrics()) }).build();
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+// 各テストで新しい人（最初の追加でアカウントができる）
+const api = new OptionsApiClient(app);
 
 beforeEach(async () => {
   await data.reset();
+  api.use(null);
 });
 
 afterAll(async () => {
   await data.reset();
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
 });
 
 describe("POST /api/options/:id/achievements", () => {

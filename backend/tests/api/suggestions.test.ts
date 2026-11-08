@@ -8,23 +8,32 @@ import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { SuggestionsApiClient } from "../fakes/SuggestionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
+import { TestUsers } from "../fakes/TestUsers";
 
 // GET /api/suggestions、GET /api/suggestions/:id（api.md §2、testing.md §2）。提案はマイグレーションで入れたマスターデータを使う
-const pool = new PgPoolFactory(process.env, console).create();
+// マスターデータの確かめと後始末は ol_migrator（pool）、アプリは ol_app（appPool。testing.md §0）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
 const data = new TestDatabase(pool);
-const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
-const app = new TestApp({ db }).build();
+const users = new TestUsers(pool);
+const db = new CountingDatabase(new PgDatabase(appPool, new PromMetrics()));
+// セッションの SQL（auth_find_user）は 1 リクエストの本数に数えない（metrics.md §4）ので、数えない DB に分ける
+const app = new TestApp({ db, sessionDb: new PgDatabase(appPool, new PromMetrics()) }).build();
+const NOT_FOUND = { error: { code: "NOT_FOUND" } };
+// 各テストの人。提案の画面と options の API を同じ Cookie で呼ぶ（beforeEach で Cookie を入れる）
 const api = new SuggestionsApiClient(app);
 const options = new OptionsApiClient(app);
-const NOT_FOUND = { error: { code: "NOT_FOUND" } };
 
 beforeEach(async () => {
   await data.reset();
+  const { cookie } = await users.create();
+  api.use(cookie);
+  options.use(cookie);
 });
 
 afterAll(async () => {
   await data.reset();
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
 });
 
 describe("GET /api/suggestions", () => {

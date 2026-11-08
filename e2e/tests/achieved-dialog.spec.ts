@@ -17,7 +17,9 @@ test.afterAll(async () => {
   await data.close()
 })
 
-test('Esc は「このまま残す」と同じで、確認だけが閉じてシートは残る', async ({ page, request }) => {
+test('Esc は「このまま残す」と同じで、確認だけが閉じてシートは残る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('登山')
   const list = new WishListScreen(page)
   await list.open()
@@ -33,7 +35,9 @@ test('Esc は「このまま残す」と同じで、確認だけが閉じてシ�
   await expect(list.titleCells()).toHaveText(['登山'])
 })
 
-test('確認を開いたまま戻ると、シートごと閉じて一覧を操作できる', async ({ page, request }) => {
+test('確認を開いたまま戻ると、シートごと閉じて一覧を操作できる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('温泉')
   const list = new WishListScreen(page)
   await list.open()
@@ -50,7 +54,9 @@ test('確認を開いたまま戻ると、シートごと閉じて一覧を操�
   await expect(completion.moveConfirm()).toBeHidden()
 })
 
-test('写真の保存の間は「保存しています…」と出し、答えられず、Esc でも閉じない', async ({ page, request }) => {
+test('写真の保存の間は「保存しています…」と出し、答えられず、Esc でも閉じない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('写生')
   const list = new WishListScreen(page)
   await list.open()
@@ -75,7 +81,9 @@ test('写真の保存の間は「保存しています…」と出し、答え�
   await expect(confirm.getByRole('button', { name: '移動する' })).toBeEnabled()
 })
 
-test('付けた写真を選び直せる。次の 🎉 では枠が空に戻り、写真はその達成に付く', async ({ page, request }) => {
+test('付けた写真を選び直せる。次の 🎉 では枠が空に戻り、写真はその達成に付く', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('ボウリング')
   const list = new WishListScreen(page)
   await list.open()
@@ -104,7 +112,9 @@ test('付けた写真を選び直せる。次の 🎉 では枠が空に戻り�
   await expect(completion.historyPhotos()).toHaveCount(2)
 })
 
-test('移動に失敗したらトーストで知らせ、確認に戻って答え直せる', async ({ page, request }) => {
+test('移動に失敗したらトーストで知らせ、確認に戻って答え直せる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('乗馬')
   const list = new WishListScreen(page)
   await list.open()
@@ -127,7 +137,9 @@ test('移動に失敗したらトーストで知らせ、確認に戻って答�
   await expect(page.getByText('『乗馬』をやったリストに移しました')).toBeVisible()
 })
 
-test('演出の途中でシートを閉じたら、演出の時間が過ぎても確認は残らず、一覧を操作できる', async ({ page, request }) => {
+test('演出の途中でシートを閉じたら、演出の時間が過ぎても確認は残らず、一覧を操作できる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('キャンプ')
   const list = new WishListScreen(page)
   await list.open()

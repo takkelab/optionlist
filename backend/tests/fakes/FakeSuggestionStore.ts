@@ -1,8 +1,21 @@
 import type { SuggestionCatalog, SuggestionSummary, Tag } from "../../../shared/types";
-import type { RelatedCandidate, SuggestionBody, SuggestionStore } from "../../src/repositories/SuggestionRepository";
+import type { RelatedCandidate, SuggestionBody, SuggestionStore, SuggestionStores } from "../../src/repositories/SuggestionRepository";
 
 // メモリ上の SuggestionStore。add した順に id を振り、タグは名前から id を振る
-export class FakeSuggestionStore implements SuggestionStore {
+// withUser は人を覚えて自分を渡すだけ
+export class FakeSuggestionStore implements SuggestionStore, SuggestionStores {
+  readonly #users: (number | null)[] = [];
+
+  withUser<T>(userId: number | null, fn: (store: SuggestionStore) => Promise<T>): Promise<T> {
+    this.#users.push(userId);
+    return fn(this);
+  }
+
+  // withUser に渡された人（呼ばれた順）
+  users(): (number | null)[] {
+    return [...this.#users];
+  }
+
   readonly #tags: Tag[] = [];
   readonly #suggestions: SuggestionSummary[] = [];
   #candidateCalls = 0;

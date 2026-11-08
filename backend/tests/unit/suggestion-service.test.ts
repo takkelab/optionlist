@@ -3,6 +3,8 @@ import { AppError } from "../../src/services/errors";
 import { SuggestionService } from "../../src/services/SuggestionService";
 import { FakeSuggestionStore } from "../fakes/FakeSuggestionStore";
 
+const USER = 7;
+
 describe("SuggestionService", () => {
   let store: FakeSuggestionStore;
   let service: SuggestionService;
@@ -14,7 +16,7 @@ describe("SuggestionService", () => {
 
   it("returns the catalog from the store", async () => {
     store.add(["星", "夜"]);
-    const { suggestions, tags } = await service.catalog();
+    const { suggestions, tags } = await service.catalog(USER);
     expect(suggestions).toEqual([expect.objectContaining({ id: 1, tagIds: [1, 2] })]);
     expect(tags).toEqual([
       { id: 1, name: "星" },
@@ -30,7 +32,7 @@ describe("SuggestionService", () => {
     store.add(["夜", "観察"]); // 5: 2 個
     store.add(["星", "夜", "観察"]); // 6: 3 個
 
-    const { related } = await service.detail(me);
+    const { related } = await service.detail(USER, me);
     expect(related.map((s) => s.id)).toEqual([6, 3, 5, 2]);
   });
 
@@ -38,7 +40,7 @@ describe("SuggestionService", () => {
     const me = store.add(["星"]);
     for (let i = 0; i < 7; i++) store.add(["星"]);
 
-    const { related } = await service.detail(me);
+    const { related } = await service.detail(USER, me);
     expect(related.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
     expect(related[0]).not.toHaveProperty("shared");
   });
@@ -46,7 +48,7 @@ describe("SuggestionService", () => {
   it("returns the body with its tags", async () => {
     const me = store.add(["星", "夜"], { seasonFrom: 12, seasonTo: 2, optionStatus: "completed" });
 
-    expect(await service.detail(me)).toEqual(
+    expect(await service.detail(USER, me)).toEqual(
       expect.objectContaining({
         id: me,
         seasonFrom: 12,
@@ -64,7 +66,7 @@ describe("SuggestionService", () => {
   });
 
   it("throws NOT_FOUND without reading the related candidates for an unknown suggestion", async () => {
-    const error = await service.detail(99).catch((e: unknown) => e);
+    const error = await service.detail(USER, 99).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).code()).toBe("NOT_FOUND");
     expect(store.candidateCalls()).toBe(0);

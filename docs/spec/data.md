@@ -149,13 +149,14 @@
 
 | ロール | ログイン | 使うところ | 権限 | 利用者の表（users・options・achievements）のポリシー |
 |--------|----------|------------|------|------|
-| `ol_migrator` | する | dbmate（マイグレーション）、テストの後始末、性能用データの投入、週 1 の書き出し、復旧の訓練の数え上げ | 表・ビュー・関数の持ち主 | `USING (true) WITH CHECK (true)` |
+| `ol_migrator` | する | dbmate（マイグレーション）、テストの後始末、性能用データの投入、週 1 の書き出し、復旧の訓練の数え上げ | 表・ビュー・関数の持ち主。手元と CI では CREATEDB も持つ（マイグレーションのテストが DB を作り直す。確認用・本番は R8 で決める。docs/decisions/0048） | `USING (true) WITH CHECK (true)` |
 | `ol_app` | する | アプリ（Cloud Run のサービス） | users・options・achievements の SELECT / INSERT / UPDATE / DELETE、マスターデータの SELECT、events の INSERT、§4 の認証の関数の EXECUTE。表の持ち主ではない | 自分の行だけ（下の RLS） |
 | `ol_cleanup` | する | 削除のジョブ（§5）だけ | users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） | `USING (true)`（SELECT・DELETE のポリシーだけ） |
 | `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） | なし（表の権限がない） |
 | `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | 関数とビューの中で必要な表だけを読む・書く | `USING (true) WITH CHECK (true)` |
 | `ol_incident` | しない | 障害対応で中身を見るときだけ（docs/decisions/0043） | users・options・achievements・events の SELECT だけ | `USING (true)`（SELECT のポリシーだけ） |
 
+- ロールはクラスタ全体のものなので、マイグレーションではなく `npm --prefix backend run db:roles`（手元。テストは `db:roles:test`）が superuser（`ADMIN_DATABASE_URL`）で作る。パスワードは `DATABASE_URL`・`APP_DATABASE_URL` などの URL から取り、何度流しても同じ結果になる。あわせて `DATABASE_URL` の DB を `ol_migrator` の持ち物として作る（持ち主が違えば `--recreate` を付けたときだけ消して作り直す。`db:roles:test` は名前が `_test` で終わる DB だけを扱い、いつも作り直す）。表の権限・ポリシー・関数はマイグレーションで付ける
 - 本番で中身を見るのは障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに `ol_incident` を付け（`GRANT ol_incident TO <IAM のユーザー>`）、終わったらすぐ外す（`REVOKE`）。付けた・外したことは Cloud Audit Logs に残り、日付と理由を `docs/ops/data-access.md` に書く。IAM の管理用ユーザーそのものには、利用者の表のポリシーを付けない（ふだんは 0 行しか見えない）
 - `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer`・`ol_incident` だけ（testing.md §7 で確かめる）
 - `ol_migrator` は `ol_definer` のメンバーにする。ただし `GRANT ol_definer TO ol_migrator WITH INHERIT FALSE, SET TRUE`（権限は引き継がず、`SET ROLE` だけができる）にする。マイグレーションで関数とビューを作り、持ち主を `ol_definer` に移す（`ALTER FUNCTION/VIEW … OWNER TO ol_definer`）・作り直すには、PostgreSQL 16 以降では `SET ROLE` できることが要るため。強いロールへのメンバーシップの例外はこれと、ロールを作ったユーザーに自動で付く ADMIN だけ（testing.md §7）
@@ -178,7 +179,7 @@ RLS の中では「鍵から人を探す」ことができない（まだ誰か�
 | 関数 | 返すもの | 内容 |
 |------|----------|------|
 | `auth_find_user(session_hash bytea)` | `(user_id bigint, last_seen_at timestamptz)`。なければ 0 行 | 鍵のハッシュから人を探す。`last_seen_at` も返すので、「今日もう書いたか」（api.md §6）のために users を読み直さない |
-| `auth_create_user(session_hash bytea, ip_hash bytea)` | `(status text, user_id bigint, retry_after_seconds int)` | その IP から 1 時間に作ったアカウントが上限（api.md §6）未満なら、users に 1 行入れて `ok` と ID を返す。上限なら `rate_limited`。どちらでも auth_attempts に 1 行入れる |
+| `auth_create_user(session_hash bytea, ip_hash bytea)` | `(status text, user_id bigint, retry_after_seconds int)` | その IP から 1 時間に作ったアカウントが上限（api.md §6）未満なら、users に 1 行入れて `ok` と ID を返す。上限なら `rate_limited`。作ったときだけ auth_attempts に 1 行入れる（断った試行は数えない。数えると、断られて試し直すたびに窓が延び、`Retry-After` が当たらなくなる。docs/decisions/0048）。同じ IP から同時に来ても上限を超えないよう、数える前に IP ごとのアドバイザリロックを取る |
 | `auth_restore(code_hash bytea, new_session_hash bytea, ip_hash bytea, current_user_id bigint, replace boolean)` | `(status text, user_id bigint, retry_after_seconds int, local_item_count int)` | 先に回数を数え、上限なら（コードが合っていても）`rate_limited`。合わなければ `not_found`。合っていて、`current_user_id` がコードの人と別で、その人に項目か達成があり、`replace` が false なら、何も変えずに `needs_confirm` と、その人の項目（options）の件数を返す。それ以外で合えば、`session_hash` を置き換え、`recovery_code_hash` を NULL にして `ok` と ID を返す（古いアカウントを消すのはアプリ。api.md §6）。どの結果でも auth_attempts に 1 行入れる |
 
 ## 5. 保存期間と削除（docs/decisions/0040）

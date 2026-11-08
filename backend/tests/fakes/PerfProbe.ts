@@ -10,13 +10,16 @@ export interface HttpProbe {
 
 // 性能テスト用に、listen した backend へ fetch でリクエストし、応答時間とその間に流れた SQL の本数を返す
 // リクエストは 1 本ずつ順に送る（SQL の本数をリクエストごとに数えるため）
+// cookie（"ol_session=…"）は測る人のセッション。どのリクエストにも付ける
 export class PerfProbe implements HttpProbe {
   readonly #baseUrl: string;
   readonly #db: CountingDatabase;
+  readonly #cookie: string;
 
-  constructor(baseUrl: string, db: CountingDatabase) {
+  constructor(baseUrl: string, db: CountingDatabase, cookie: string) {
     this.#baseUrl = baseUrl;
     this.#db = db;
+    this.#cookie = cookie;
   }
 
   call(method: string, path: string, body?: unknown): Promise<TimedResponse> {
@@ -35,7 +38,8 @@ export class PerfProbe implements HttpProbe {
   async #send(method: string, path: string, init: RequestInit): Promise<TimedResponse> {
     const before = this.#db.count();
     const started = performance.now();
-    const res = await fetch(`${this.#baseUrl}${path}`, { ...init, method });
+    const headers = { ...(init.headers as Record<string, string> | undefined), Cookie: this.#cookie };
+    const res = await fetch(`${this.#baseUrl}${path}`, { ...init, headers, method });
     const text = await res.text();
     const ms = performance.now() - started;
     const { status } = res;

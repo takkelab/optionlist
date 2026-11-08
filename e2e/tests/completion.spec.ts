@@ -44,7 +44,9 @@ test('手動で追加 → シートで 🎉 → 労いの演出 → 「移動す
   await expect(card).toContainText(/\d+月\d+日に移動/)
 })
 
-test('🎉 → 「このまま残す」→ やりたいリストに残り、達成回数と達成した日が出る', async ({ page, request }) => {
+test('🎉 → 「このまま残す」→ やりたいリストに残り、達成回数と達成した日が出る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('ボルダリング')
   const list = new WishListScreen(page)
   await list.open()
@@ -73,7 +75,9 @@ test('🎉 → 「このまま残す」→ やりたいリストに残り、達�
   await expect(page.getByRole('listitem').filter({ hasText: 'ボルダリング' })).toContainText('🎉×2')
 })
 
-test('やったリストから「やりたいリストに戻す」と、やったリストから消えてやりたいリストに出る', async ({ page, request }) => {
+test('やったリストから「やりたいリストに戻す」と、やったリストから消えてやりたいリストに出る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.complete(await seed.add('スキューバダイビング'))
   await page.goto('/done')
@@ -90,7 +94,9 @@ test('やったリストから「やりたいリストに戻す」と、やっ�
   await expect(list.titleCells()).toHaveText(['スキューバダイビング'])
 })
 
-test('🎉 のあとに写真を付けると、やったリストで見え、シートで付け替え・削除できる', async ({ page, request }) => {
+test('🎉 のあとに写真を付けると、やったリストで見え、シートで付け替え・削除できる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('陶芸')
   const list = new WishListScreen(page)
   await list.open()
@@ -123,7 +129,9 @@ test('🎉 のあとに写真を付けると、やったリストで見え、シ
   await expect(card.locator('img')).toHaveCount(0)
 })
 
-test('移動の確認で写真を付けて「このまま残す」と、シートの達成した日に写真が出る', async ({ page, request }) => {
+test('移動の確認で写真を付けて「このまま残す」と、シートの達成した日に写真が出る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('ピクニック')
   const list = new WishListScreen(page)
   await list.open()
@@ -140,7 +148,9 @@ test('移動の確認で写真を付けて「このまま残す」と、シー�
   await expect(list.titleCells()).toHaveText(['ピクニック'])
 })
 
-test('移動の確認で読めないファイルを選ぶと、トーストで知らせて確認に残り、写真は付かない', async ({ page, request }) => {
+test('移動の確認で読めないファイルを選ぶと、トーストで知らせて確認に残り、写真は付かない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('釣り')
   const list = new WishListScreen(page)
   await list.open()
@@ -157,7 +167,9 @@ test('移動の確認で読めないファイルを選ぶと、トーストで�
   await expect(completion.historyPhotos()).toHaveCount(0)
 })
 
-test('写真を付けなかった達成に、あとからシートで写真を付けられる', async ({ page, request }) => {
+test('写真を付けなかった達成に、あとからシートで写真を付けられる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.complete(await seed.add('フルマラソン'))
   await page.goto('/done')
@@ -175,7 +187,9 @@ test('写真を付けなかった達成に、あとからシートで写真を�
   await expect(card.locator('img')).toHaveCount(1)
 })
 
-test('ファイルの選択を閉じても、シートは閉じない。移動の確認はそのまま残る', async ({ page, request }) => {
+test('ファイルの選択を閉じても、シートは閉じない。移動の確認はそのまま残る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('登山')
   const list = new WishListScreen(page)
   await list.open()
@@ -194,7 +208,9 @@ test('ファイルの選択を閉じても、シートは閉じない。移動�
   await expect(completion.historyButton('写真を付ける')).toBeEnabled()
 })
 
-test('画像として読めないファイルを選ぶと、トーストで知らせて写真は付かない', async ({ page, request }) => {
+test('画像として読めないファイルを選ぶと、トーストで知らせて写真は付かない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.complete(await seed.add('読書'))
   await page.goto('/done')
@@ -211,7 +227,9 @@ test('画像として読めないファイルを選ぶと、トーストで知�
   await expect(completion.historyButton('写真を付ける')).toBeEnabled()
 })
 
-test('やったリストの項目で 🎉 を押すと、写真だけを聞く。ファイルの選択を閉じたらそのまま閉じる', async ({ page, request }) => {
+test('やったリストの項目で 🎉 を押すと、写真だけを聞く。ファイルの選択を閉じたらそのまま閉じる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.complete(await seed.add('フルマラソン'))
   await page.goto('/done')
@@ -233,7 +251,9 @@ test('やったリストの項目で 🎉 を押すと、写真だけを聞く�
   await expect(sheet.sheet()).toBeVisible()
 })
 
-test('視差効果を減らす設定では、紙吹雪を出さずにメッセージだけを出す', async ({ page, request }) => {
+test('視差効果を減らす設定では、紙吹雪を出さずにメッセージだけを出す', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await new OptionSeed(request).add('ヨガ')
   const list = new WishListScreen(page)
@@ -248,7 +268,9 @@ test('視差効果を減らす設定では、紙吹雪を出さずにメッセ�
   await expect(completion.moveConfirm()).toBeVisible()
 })
 
-test('演出の途中で Esc でシートを閉じたら、演出が終わっても移動の確認は出ない', async ({ page, request }) => {
+test('演出の途中で Esc でシートを閉じたら、演出が終わっても移動の確認は出ない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('キャンプ')
   const list = new WishListScreen(page)
   await list.open()

@@ -1,19 +1,29 @@
+import { createHash } from "node:crypto";
 import type { Database } from "../../src/infra/PgDatabase";
 
+// 1 人あたりの件数と人数。データを持つ人（usersWithData）はみな同じ内訳で、先頭（id 1）が測る人
 export type PerfDataCounts = {
   pendingOptions: number;
   completedOptions: number;
   achievements: number;
   events: number;
+  usersWithData: number;
+  // 項目のない人
+  emptyUsers: number;
 };
 
-// metrics.md §1 の件数
+// metrics.md §1 の件数（測る人 1・データを持つほかの人 49・項目のない人 9,950）
 export const PERF_DATA_COUNTS: PerfDataCounts = {
   pendingOptions: 500,
   completedOptions: 500,
   achievements: 5_000,
   events: 100_000,
+  usersWithData: 50,
+  emptyUsers: 9_950,
 };
+
+// 測る人（users の id 1）の Cookie の鍵。性能テストはこの鍵の ol_session で API を呼ぶ（32 バイトの base64url と同じ 43 文字）
+export const PERF_SESSION_KEY = "perf-measured-user-session-key-000000000000";
 
 export interface RandomSource {
   // 0 以上 1 未満
@@ -60,12 +70,13 @@ const CHUNK_SIZE = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // 作成日などを散らす期間（数年分を想定。metrics.md §1）
 const SPAN_DAYS = 3 * 365;
-// 提案から追加した option の数。追加済みとまだの提案が混ざるよう、全件にはしない
+// 1 人が提案から追加した option の数。追加済みとまだの提案が混ざるよう、全件にはしない
 const ADDED_SUGGESTIONS = 50;
 // client_error の発生した画面（screens.md §8。送るイベントは client_error だけ。docs/decisions/0031）
 const ERROR_ROUTES = ["/", "/done", "/suggestions", "/suggestions/12"];
 
 // metrics.md §1 の性能用データを入れる。マスターデータ（themes・tags・suggestions・suggestion_tags）以外を消してから入れ直す
+// db は ol_migrator の接続（RLS の USING (true) のポリシーで、全員の行を書ける。data.md §4）
 export class PerfDataGenerator implements DataGenerator {
   readonly #db: Database;
   readonly #counts: PerfDataCounts;
@@ -79,9 +90,11 @@ export class PerfDataGenerator implements DataGenerator {
     this.#now = now;
   }
 
-  // ID を 1 から振り直すので、options は入れた順に 1, 2, … になる（achievements の option_id はそれを使う）
+  // ID を 1 から振り直すので、users・options は入れた順に 1, 2, … になる（options・achievements はそれを使う）
+  // 人 u（1 始まり）の options の id は (u - 1) × 1 人の件数 + 1 から続く
   async generate(): Promise<void> {
-    await this.#db.query("TRUNCATE TABLE achievements, events, options RESTART IDENTITY");
+    await this.#db.query("TRUNCATE TABLE achievements, auth_attempts, events, options, users RESTART IDENTITY");
+    await this.#insertUsers();
     await this.#insertOptions();
     await this.#insertAchievements();
     await this.#insertEvents();
@@ -91,31 +104,50 @@ export class PerfDataGenerator implements DataGenerator {
     return this.#counts.pendingOptions + this.#counts.completedOptions;
   }
 
+  // 測る人だけ鍵が分かっている。last_seen_at は今（測っている間に last_seen_at を書かない）
+  async #insertUsers(): Promise<void> {
+    const rows: unknown[][] = [];
+    const total = this.#counts.usersWithData + this.#counts.emptyUsers;
+    for (let u = 1; u <= total; u++) {
+      const key = u === 1 ? PERF_SESSION_KEY : `perf-user-${u}`;
+      const hash = createHash("sha256");
+      hash.update(key);
+      rows.push([hash.digest(), this.#pastDate(), u === 1 ? this.#now : this.#pastDate()]);
+    }
+    await this.#insert("users", ["session_hash", "created_at", "last_seen_at"], rows);
+  }
+
   async #insertOptions(): Promise<void> {
     const rows: unknown[][] = [];
-    for (let id = 1; id <= this.#optionCount(); id++) {
-      const pending = id <= this.#counts.pendingOptions;
-      const createdAt = this.#pastDate();
-      const suggestionId = id <= ADDED_SUGGESTIONS ? id : null;
-      const completedAt = pending ? null : this.#between(createdAt, this.#now);
-      const status = pending ? "pending" : "completed";
-      // 半分に予定日を入れる（日付だけ）
-      const plannedOn = id % 2 === 0 ? this.#pastDate().toISOString().slice(0, 10) : null;
-      const updatedAt = completedAt ?? createdAt;
-      rows.push([`性能テスト用 ${id}`, status, suggestionId, id, plannedOn, completedAt, createdAt, updatedAt]);
+    for (let u = 1; u <= this.#counts.usersWithData; u++) {
+      for (let n = 1; n <= this.#optionCount(); n++) rows.push(this.#option(u, n));
     }
-    const columns = ["title", "status", "suggestion_id", "sort_order", "planned_on", "completed_at", "created_at", "updated_at"];
+    const columns = ["user_id", "title", "status", "suggestion_id", "sort_order", "planned_on", "completed_at", "created_at", "updated_at"];
     await this.#insert("options", columns, rows);
+  }
+
+  // 人 u の n 件目（1 始まり）。前の pendingOptions 件が pending
+  #option(u: number, n: number): unknown[] {
+    const pending = n <= this.#counts.pendingOptions;
+    const createdAt = this.#pastDate();
+    const suggestionId = n <= ADDED_SUGGESTIONS ? n : null;
+    const completedAt = pending ? null : this.#between(createdAt, this.#now);
+    // 半分に予定日を入れる（日付だけ）
+    const plannedOn = n % 2 === 0 ? this.#pastDate().toISOString().slice(0, 10) : null;
+    return [u, `性能テスト用 ${n}`, pending ? "pending" : "completed", suggestionId, n, plannedOn, completedAt, createdAt, completedAt ?? createdAt];
   }
 
   async #insertAchievements(): Promise<void> {
     const rows: unknown[][] = [];
-    for (let i = 0; i < this.#counts.achievements; i++) {
-      // 一覧が写真を読む分も測れるよう、3 件に 1 件に写真を付ける（ファイルは置かない。名前を読むだけ）
-      const photo = i % 3 === 0 ? `perf-${i}.jpg` : null;
-      rows.push([1 + Math.floor(this.#random.next() * this.#optionCount()), this.#pastDate(), photo]);
+    for (let u = 1; u <= this.#counts.usersWithData; u++) {
+      const firstOption = (u - 1) * this.#optionCount() + 1;
+      for (let i = 0; i < this.#counts.achievements; i++) {
+        // 一覧が写真を読む分も測れるよう、3 件に 1 件に写真を付ける（ファイルは置かない。名前を読むだけ。名前は全員で重ならない）
+        const photo = i % 3 === 0 ? `perf-${u}-${i}.jpg` : null;
+        rows.push([u, firstOption + Math.floor(this.#random.next() * this.#optionCount()), this.#pastDate(), photo]);
+      }
     }
-    await this.#insert("achievements", ["option_id", "achieved_at", "photo_filename"], rows);
+    await this.#insert("achievements", ["user_id", "option_id", "achieved_at", "photo_filename"], rows);
   }
 
   async #insertEvents(): Promise<void> {

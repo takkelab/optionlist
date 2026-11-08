@@ -9,6 +9,7 @@ import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
 import { PgDatabase } from "../../src/infra/PgDatabase";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
+import { PERF_SESSION_KEY } from "../../db/perf-data/PerfDataGenerator";
 import { BackendProcess, NODE_FLAGS } from "../fakes/BackendProcess";
 import { CountingDatabase } from "../fakes/CountingDatabase";
 import { FullScanFinder } from "../fakes/FullScanFinder";
@@ -41,8 +42,11 @@ const PHOTO_RUNS = 20;
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1024 * 1024 - 4)]);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-perf-photos-"));
 
-const pool = new PgPoolFactory(process.env, console).create();
-const db = new CountingDatabase(new PgDatabase(pool, new PromMetrics()));
+// アプリと EXPLAIN は ol_app（appPool）、データの確かめは pool（ol_migrator）。EXPLAIN は測る人の app.user_id にして流す（metrics.md §4）
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
+const appPool = new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create();
+const COOKIE = `ol_session=${PERF_SESSION_KEY}`;
+const db = new CountingDatabase(new PgDatabase(appPool, new PromMetrics()));
 const results = new PerfResults();
 const percentile = new NearestRankPercentile();
 const scanFinder = new FullScanFinder(MASTER_TABLES);
@@ -50,22 +54,22 @@ const servers: Server[] = [];
 const probes: PerfProbe[] = [];
 
 beforeAll(async () => {
-  const server = await new TestApp({ db, photoFiles: new LocalPhotoFiles(uploadDir) }).listen(0);
+  const server = await new TestApp({ db, sessionDb: new PgDatabase(appPool, new PromMetrics()), photoFiles: new LocalPhotoFiles(uploadDir) }).listen(0);
   const { port } = server.address() as AddressInfo;
   servers.push(server);
-  probes.push(new PerfProbe(`http://127.0.0.1:${port}`, db));
+  probes.push(new PerfProbe(`http://127.0.0.1:${port}`, db, COOKIE));
 });
 
 afterAll(async () => {
   results.write(RESULTS_PATH);
   rmSync(uploadDir, { recursive: true, force: true });
   await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));
-  await pool.end();
+  await Promise.all([pool.end(), appPool.end()]);
 });
 
 describe("backend performance with the metrics.md §1 data", () => {
   it("has the perf data loaded", async () => {
-    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM options");
+    const { rows } = await pool.query("SELECT COUNT(*) AS n FROM options WHERE user_id = 1");
     expect(rows).toEqual([{ n: 1000 }]);
   });
 
@@ -82,11 +86,11 @@ describe("backend performance with the metrics.md §1 data", () => {
     const mb = (bytes: number): number => Math.round((bytes / 1024 / 1024) * 10) / 10;
     try {
       const baseUrl = await backend.start();
-      for (const path of READ_PATHS) await fetch(`${baseUrl}${path}`);
+      for (const path of READ_PATHS) await fetch(`${baseUrl}${path}`, { headers: { Cookie: COOKIE } });
       let rssMax = await backend.rssBytes();
       const rssStart = rssMax;
       for (let i = 0; i < MEMORY_RUNS; i++) {
-        const res = await fetch(`${baseUrl}${READ_PATHS[i % READ_PATHS.length] ?? "/api/health"}`);
+        const res = await fetch(`${baseUrl}${READ_PATHS[i % READ_PATHS.length] ?? "/api/health"}`, { headers: { Cookie: COOKIE } });
         expect(res.status).toBe(200);
         await res.arrayBuffer();
         rssMax = Math.max(rssMax, await backend.rssBytes());
@@ -202,10 +206,12 @@ describe("backend performance with the metrics.md §1 data", () => {
     // 小さい表では、索引があっても全部読むほうが速いと見て Seq Scan を選ぶ。そこで enable_seqscan = off にして、
     // それでも Seq Scan になる（索引では読めない）ものだけを数える（docs/decisions/0047）。EXPLAIN は SQL を実行しない
     const scans: string[] = [];
-    const client = await pool.connect();
+    // ol_app で流す（RLS のポリシーの条件も含めた計画になる）
+    const client = await appPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL enable_seqscan = off");
+      await client.query("SELECT set_config('app.user_id', $1, true)", ["1"]);
       for (const { sql, params } of db.statements()) {
         const { rows } = await client.query(`EXPLAIN (FORMAT JSON) ${sql}`, params);
         const [row] = rows;

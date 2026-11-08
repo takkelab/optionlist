@@ -1,13 +1,25 @@
 import type { Option, OptionDetail, OptionStatus } from "../../../shared/types";
-import type { NewOptionRow, OptionChanges, OptionStore, SortOrderEntry } from "../../src/repositories/OptionRepository";
+import type { NewOptionRow, OptionChanges, OptionStore, OptionStores, SortOrderEntry } from "../../src/repositories/OptionRepository";
 import type { Clock } from "../../src/services/Clock";
 import { AppError } from "../../src/services/errors";
 
 type StoredOption = Option & { sortOrder: number };
 
 // メモリ上の OptionStore。並び順は sortOrder を持って OptionRepository と同じ規則で並べる
-export class FakeOptionStore implements OptionStore {
+// withUser は人を覚えて自分を渡すだけ（人ごとに分けるのは RLS と SQL の仕事なので、API テストで確かめる）
+export class FakeOptionStore implements OptionStore, OptionStores {
+  readonly #users: (number | null)[] = [];
   readonly #photoNames = new Map<number, string[]>();
+
+  withUser<T>(userId: number | null, fn: (store: OptionStore) => Promise<T>): Promise<T> {
+    this.#users.push(userId);
+    return fn(this);
+  }
+
+  // withUser に渡された人（呼ばれた順）
+  users(): (number | null)[] {
+    return [...this.#users];
+  }
   #rows: StoredOption[] = [];
   #nextId = 1;
 

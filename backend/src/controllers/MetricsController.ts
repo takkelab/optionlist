@@ -1,6 +1,5 @@
-import type { IRouter } from "express";
 import type { MetricsExporter } from "../metrics/AppMetrics";
-import type { Controller, TextResponse } from "./http";
+import type { Controller, TextResponse, Routes } from "./http";
 
 // GET /api/metrics（metrics.md §5。Prometheus のテキスト形式）
 export class MetricsController implements Controller {
@@ -10,7 +9,7 @@ export class MetricsController implements Controller {
     this.#metrics = metrics;
   }
 
-  register(router: IRouter): void {
+  register(router: Routes): void {
     router.get("/api/metrics", (_req, res) => this.metrics(res));
   }
 

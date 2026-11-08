@@ -15,7 +15,9 @@ test.afterAll(async () => {
 })
 
 // screens.md §8: トーストで知らせた失敗は client_error として保存される。testing.md §5 のシナリオ 9
-test('API の失敗をトーストで知らせると、client_error が発生した画面と一緒に保存される', async ({ page, request }) => {
+test('API の失敗をトーストで知らせると、client_error が発生した画面と一緒に保存される', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const list = new WishListScreen(page)
   await list.open()
   await list.add('消される項目')

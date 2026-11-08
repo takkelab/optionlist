@@ -49,7 +49,9 @@ test('手動で追加 → シートのカレンダーで予定日を決める �
   await expect(cardDate).toHaveCount(0)
 })
 
-test('カレンダーは ‹ › で月を移り、年月を押して出す 12 か月のボタン（‹ › で年）で遠い月へ行ける', async ({ page, request }) => {
+test('カレンダーは ‹ › で月を移り、年月を押して出す 12 か月のボタン（‹ › で年）で遠い月へ行ける', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('富士山に登る')
   const list = new WishListScreen(page)
   await list.open()
@@ -82,7 +84,9 @@ test('カレンダーは ‹ › で月を移り、年月を押して出す 12 �
   await expect(title).toHaveText(`${year + 1}年11月`)
 })
 
-test('予定日が昔の年でも、その月から開いて選び直せる', async ({ page, request }) => {
+test('予定日が昔の年でも、その月から開いて選び直せる', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const id = await new OptionSeed(request).add('富士山に登る')
   const res = await request.patch(`/api/options/${id}`, { data: { plannedOn: '2020-05-01' } })
   expect(res.status()).toBe(200)
@@ -98,7 +102,9 @@ test('予定日が昔の年でも、その月から開いて選び直せる', as
   await expect(sheet.plannedOn()).toHaveText('2020/5/2（土）')
 })
 
-test('AI に相談を押すと中央のダイアログに相談文が出て、直してからコピーできる。閉じてもシートは残り、直した文は残らない', async ({ page, context, request }) => {
+test('AI に相談を押すと中央のダイアログに相談文が出て、直してからコピーできる。閉じてもシートは残り、直した文は残らない', async ({ page, context }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await new OptionSeed(request).add('富士山に登る')
   const list = new WishListScreen(page)
@@ -149,7 +155,9 @@ test('AI に相談を押すと中央のダイアログに相談文が出て、�
   await expect(text).toHaveValue(texts.prompt('富士山に登る', dates.long(date)))
 })
 
-test('http で開いたとき（navigator.clipboard が使えない）も、ダイアログの中の入力欄を選んで相談文をコピーする', async ({ page, request }) => {
+test('http で開いたとき（navigator.clipboard が使えない）も、ダイアログの中の入力欄を選んで相談文をコピーする', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   // 安全でないコンテキストにし、execCommand('copy') のときに選ばれている文字を window.name に残す
   await page.addInitScript(() => {
     Object.defineProperty(window, 'isSecureContext', { value: false })
@@ -175,7 +183,9 @@ test('http で開いたとき（navigator.clipboard が使えない）も、ダ�
   expect(await page.evaluate(() => window.name)).toBe(texts.prompt('富士山に登る', null))
 })
 
-test('タイトルは見出しを押してその場で直せる。Esc・空では変わらない', async ({ page, request }) => {
+test('タイトルは見出しを押してその場で直せる。Esc・空では変わらない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('富士山に登る')
   const list = new WishListScreen(page)
   await list.open()
@@ -201,7 +211,9 @@ test('タイトルは見出しを押してその場で直せる。Esc・空で�
   expect(await list.titles()).toEqual(['富士山に夜から登る'])
 })
 
-test('削除は確認してから行い、一覧から消えてシートも閉じる。キャンセル・Esc では残る', async ({ page, request }) => {
+test('削除は確認してから行い、一覧から消えてシートも閉じる。キャンセル・Esc では残る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.add('残す')
   await seed.add('消す')
@@ -235,7 +247,9 @@ test('削除は確認してから行い、一覧から消えてシートも閉�
   expect(await list.titles()).toEqual(['残す'])
 })
 
-test('予定日があるものは一覧の上に日付の早い順に並び、過ぎたものも上に残る。予定日を消すと予定日がないものの一番上に入る', async ({ page, request }) => {
+test('予定日があるものは一覧の上に日付の早い順に並び、過ぎたものも上に残る。予定日を消すと予定日がないものの一番上に入る', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   const ids = new Map<string, number>()
   for (const title of ['a', 'b', 'c', 'd', 'e']) ids.set(title, await seed.add(title))

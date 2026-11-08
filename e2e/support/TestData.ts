@@ -13,8 +13,8 @@ export interface TestData {
   close(): Promise<void>
 }
 
-// マスターデータ以外のテーブル（backend/tests/fakes/TestDatabase.ts と同じ）
-const DATA_TABLES = ['achievements', 'events', 'options']
+// マスターデータ以外のテーブル（backend/tests/fakes/TestDatabase.ts と同じ）。接続は ol_migrator（DATABASE_URL）なので、全員の行に効く
+const DATA_TABLES = ['achievements', 'auth_attempts', 'events', 'options', 'users']
 const ENV_FILE = resolve(import.meta.dirname, '../../backend/.env.test')
 
 // E2E の各テストの前にテスト用 DB を空にする。backend が使うのと同じ backend/.env.test の DATABASE_URL に接続する

@@ -27,7 +27,9 @@ const THEME_COLOR = '--theme-color'
 test.describe('PC の幅', () => {
   test.use({ viewport: PC, isMobile: false, hasTouch: false })
 
-  test('中身・タブバー・「＋」は中央の列に収まる', async ({ page, request }) => {
+  test('中身・タブバー・「＋」は中央の列に収まる', async ({ page }) => {
+    // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+    const { request } = page
     const seed = new OptionSeed(request)
     await seed.add('やりたいこと 1')
     await seed.add('やりたいこと 2')
@@ -46,7 +48,9 @@ test.describe('PC の幅', () => {
     expect(Math.abs(tabs.left - COLUMN_LEFT - (COLUMN_RIGHT - tabs.right))).toBeLessThanOrEqual(1)
   })
 
-  test('棚は ‹ › で横に送れる。まだ送れる側にだけ矢印が出る', async ({ page, request }) => {
+  test('棚は ‹ › で横に送れる。まだ送れる側にだけ矢印が出る', async ({ page }) => {
+    // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+    const { request } = page
     const { themes } = await new SuggestionData(request).catalog()
     const [theme] = themes
     if (theme === undefined) throw new Error('テーマがない')
@@ -64,7 +68,9 @@ test.describe('PC の幅', () => {
   })
 })
 
-test('スマホ（指で触る端末）では、棚の矢印を出さない', async ({ page, request }) => {
+test('スマホ（指で触る端末）では、棚の矢印を出さない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const { themes } = await new SuggestionData(request).catalog()
   const [theme] = themes
   if (theme === undefined) throw new Error('テーマがない')

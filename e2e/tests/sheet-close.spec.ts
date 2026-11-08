@@ -15,7 +15,9 @@ test.afterAll(async () => {
   await data.close()
 })
 
-test('戻るではシートだけが閉じ、一覧の画面に残る。Esc で閉じたあとの戻るは、前の画面へ戻る（docs/decisions/0025）', async ({ page, request }) => {
+test('戻るではシートだけが閉じ、一覧の画面に残る。Esc で閉じたあとの戻るは、前の画面へ戻る（docs/decisions/0025）', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('朝日を見に行く')
   await page.goto('/suggestions')
   const list = new WishListScreen(page)
@@ -34,7 +36,9 @@ test('戻るではシートだけが閉じ、一覧の画面に残る。Esc で�
   await expect(page).toHaveURL('/suggestions')
 })
 
-test('AI に相談を開いたまま戻ると、シートごと閉じて一覧を操作できる（docs/decisions/0025）', async ({ page, request }) => {
+test('AI に相談を開いたまま戻ると、シートごと閉じて一覧を操作できる（docs/decisions/0025）', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('朝日を見に行く')
   await page.goto('/suggestions')
   const list = new WishListScreen(page)
@@ -52,7 +56,9 @@ test('AI に相談を開いたまま戻ると、シートごと閉じて一覧�
   await expect(opened).toBeVisible()
 })
 
-test('シートは外を押す・Esc・下へスワイプすると閉じ、画面は一覧のまま。✕ は置かない。「今日はこれどう？」からも開ける', async ({ page, request }) => {
+test('シートは外を押す・Esc・下へスワイプすると閉じ、画面は一覧のまま。✕ は置かない。「今日はこれどう？」からも開ける', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   const seed = new OptionSeed(request)
   await seed.add('朝日を見に行く')
   await seed.add('夕日を見に行く')
@@ -127,7 +133,9 @@ test('シートは外を押す・Esc・下へスワイプすると閉じ、画�
   await expect(page).toHaveURL('/')
 })
 
-test('AI に相談・削除の確認の中で下へスワイプしても、後ろのシートは引かれず閉じない', async ({ page, request }) => {
+test('AI に相談・削除の確認の中で下へスワイプしても、後ろのシートは引かれず閉じない', async ({ page }) => {
+  // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
+  const { request } = page
   await new OptionSeed(request).add('朝日を見に行く')
   const list = new WishListScreen(page)
   await list.open()

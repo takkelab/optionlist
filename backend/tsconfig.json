@@ -9,7 +9,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "tests", "db/perf-data", "vitest.config.ts", "vitest.unit.config.ts", "vitest.perf.config.ts", "../shared"],
+  "include": ["src", "tests", "db/perf-data", "db/roles","vitest.config.ts", "vitest.unit.config.ts", "vitest.perf.config.ts", "../shared"],
   // tools/lint-rules/tests/layer-imports.test.ts が層のフォルダに一時的に置くファイル（docs/harness/incidents.md #7）
   "exclude": ["**/__layer_probe_*__.ts"]
 }

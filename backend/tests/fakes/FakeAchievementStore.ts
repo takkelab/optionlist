@@ -1,9 +1,11 @@
 import type { Achievement } from "../../../shared/types";
-import type { AchievementStore, StoredAchievement } from "../../src/repositories/AchievementRepository";
+import type { AchievementStore, AchievementStores, StoredAchievement } from "../../src/repositories/AchievementRepository";
 import { AppError } from "../../src/services/errors";
 
 // メモリ上の AchievementStore。options に当たるのは、コンストラクタで渡した ID だけ
-export class FakeAchievementStore implements AchievementStore {
+// withUser は人を覚えて自分を渡すだけ（人ごとに分けるのは RLS と SQL の仕事なので、API テストで確かめる）
+export class FakeAchievementStore implements AchievementStore, AchievementStores {
+  readonly #users: (number | null)[] = [];
   readonly #optionIds: Set<number>;
   readonly #photos = new Map<number, string>();
   #rows: Achievement[] = [];
@@ -13,6 +15,20 @@ export class FakeAchievementStore implements AchievementStore {
 
   constructor(optionIds: number[]) {
     this.#optionIds = new Set(optionIds);
+  }
+
+  withUser<T>(userId: number | null, fn: (store: AchievementStore) => Promise<T>): Promise<T> {
+    this.#users.push(userId);
+    return fn(this);
+  }
+
+  // withUser に渡された人（呼ばれた順）
+  users(): (number | null)[] {
+    return [...this.#users];
+  }
+
+  async ownsPhoto(filename: string): Promise<boolean> {
+    return [...this.#photos.values()].includes(filename);
   }
 
   async insert(optionId: number, achievedAt: Date): Promise<Achievement> {

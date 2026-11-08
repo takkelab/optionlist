@@ -45,7 +45,7 @@
 | L10 | any の禁止 | `any`、`as any`、`as unknown as`、`@ts-ignore`、`@ts-expect-error` を禁止 | なし |
 | L11 | lint 無効化コメントの禁止 | `oxlint-disable` などで lint を止めることを禁止。ルールに合わない正当な理由があるときは、ルール側の例外として許可リストに追加し、PR で理由を書く。lint ではなく `npm run metrics:check` が全体（scripts・tools を含む）を見る | なし |
 | L12 | `shared/` に実行コードを置かない | `shared/` には `type` / `interface` だけを書く。frontend・backend からは `import type` で読む（`import { type X }` は実行時に import が残るので不可） | なし |
-| L13 | 利用者のデータには `UserScopedDatabase` 越しにだけ触る | backend の SQL の文字列（テンプレートリテラルを含む）に、利用者のデータの表（`users`・`options`・`achievements`）の名前が `FROM`・`JOIN`・`INTO`・`UPDATE` の後に出てくるファイルは、`UserScopedDatabase` を受け取るクラスでなければならない（生の `Database` を import しない）。`UserScopedDatabase` は `Database.forUser(userId \| null)` だけが作り、`run(fn)` の中で `BEGIN` → `set_config('app.user_id', …, true)`（null なら設定しない）→ fn → `COMMIT` を行う。`pg` を import してよいのは `backend/src/infra/` だけ。`set_config`・`SET` を SQL に書いてよいのも `infra/` だけ | 許可リスト（`tools/lint-rules/rules/user-scoped-db.ts`）: `AccountRepository`（data.md §4 の認証の関数だけを呼ぶ）、`HealthRepository`（`SELECT 1` だけ）、`EventRepository`（events への INSERT だけ）、`backend/src/jobs/`（`ol_cleanup` で接続する削除のジョブ）。提案の repository は options を JOIN する（追加済みかを出す）ので、許可リストに入れない |
+| L13 | 利用者のデータには `UserScopedDatabase` 越しにだけ触る | backend の SQL の文字列（テンプレートリテラルと、文字列の `+` の連結を含む）に、利用者のデータの表（`users`・`options`・`achievements`）の名前が `FROM`・`JOIN`・`INTO`・`UPDATE` の後（`public.` や引用符が付いたもの、`FROM` のコンマの並びを含む）に出てくるファイルは、`UserScopedDatabase` を受け取るクラスでなければならない（生の `Database` を import しない）。`UserScopedDatabase` は `Database.forUser(userId \| null)` だけが作り、`run(fn)` の中で `BEGIN` → `set_config('app.user_id', …, true)`（null なら設定しない）→ fn → `COMMIT` を行う。`pg` を import してよいのは `backend/src/infra/` だけ。`set_config`・`SET` を SQL に書いてよいのも `infra/` だけ | 許可リスト（`tools/lint-rules/rules/user-scoped-db.ts`）: `AccountRepository`（data.md §4 の認証の関数だけを呼ぶ）、`HealthRepository`（`SELECT 1` だけ）、`EventRepository`（events への INSERT だけ）、`backend/src/jobs/`（`ol_cleanup` で接続する削除のジョブ）。提案の repository は options を JOIN する（追加済みかを出す）ので、許可リストに入れない |
 
 - 対象はアプリのコード（backend・frontend・shared・e2e）。scripts/ と tools/ は品質チェックのためのハーネスなので L1〜L10・L12・L13 の対象外
 - L13 は、他人のデータが見えないことを確かめる 3 つの仕組みの 1 つ。残りの 2 つ（DB の設定と、API の振る舞い）は testing.md §7（docs/decisions/0046）
@@ -83,7 +83,8 @@ optionlist-web/
 │   │   ├── schema.sql        # dbmate が自動で書き出す。手で編集しない
 │   │   └── perf-data/        # metrics.md §1 の性能用データの生成
 │   ├── src/
-│   │   ├── server.ts         # エントリーポイント。依存を組み立てて注入し、listen する
+│   │   ├── server.ts         # エントリーポイント。DB の接続などを作って AppAssembly に渡し、listen する
+│   │   ├── AppAssembly.ts    # controllers・services・repositories を new して注入する（テストの TestApp も同じものを使うので、分離テストが集めるルートは本番と同じ）
 │   │   ├── jobs/             # Cloud Run Job のエントリーポイント（削除のジョブ cleanup.ts、エラーの件数の集計。data.md §5）
 │   │   ├── app.ts            # Express の設定（クラス。supertest はこれを使う）
 │   │   ├── controllers/      # ルーティング・入力検証・レスポンス
@@ -115,7 +116,7 @@ optionlist-web/
 ```
 
 ### 3.1 層と依存の向き
-- backend: `controllers → services → repositories → infra`。逆向きの依存は禁止。各層はインタフェース越しに次の層を使い、具体的なクラスを `new` するのは `server.ts`・`jobs/*.ts`（とテスト）だけ
+- backend: `controllers → services → repositories → infra`。逆向きの依存は禁止。各層はインタフェース越しに次の層を使い、具体的なクラスを `new` するのは `server.ts`・`AppAssembly.ts`・`jobs/*.ts`（とテスト）だけ
 - セッションの middleware は、Cookie から人を決めるために services の `SessionResolver` インタフェースだけを `import type` で読んでよい（層の lint の例外。中身は `AccountService` が実装し、`server.ts` が渡す）。決めた人の ID は `res.locals` に入れ、controllers が services に引数で渡す（services は Express を知らない）
 - frontend: `features / components → app の Context → api・lib`。コンポーネントから axios や `fetch` を直接呼ばない
 - `shared/types.ts` はどこから読んでもよい
@@ -156,6 +157,7 @@ optionlist-web/
 | `IP_HASH_SECRET` | IP を HMAC する秘密の値（api.md §6） | Secret Manager |
 
 - 秘密の値は、リポジトリ・GitHub の変数・ログに置かない。手元は `backend/.env`（git に入れない）
+- 手元と CI では、ロールと DB を作る superuser の `ADMIN_DATABASE_URL` も使う（`db:roles` だけが読む。data.md §4）。手元の `DATABASE_URL` も `ol_migrator`、アプリは `APP_DATABASE_URL`（`ol_app`）で接続する
 
 ### 4.3 本番での振る舞い
 - `APP_ENV` が `staging` か `production` なら、PortGuard（docs/decisions/0007）を使わず、`trust proxy` を 1 にし、Cookie に `Secure` を付ける

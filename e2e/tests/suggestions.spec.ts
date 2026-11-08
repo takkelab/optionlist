@@ -5,6 +5,7 @@ import { SuggestionData, SuggestionsScreen } from '../support/SuggestionsScreen'
 import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
+// 種まきの API（page.request）はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
 const data = new PgTestData()
 // 今月のおすすめは端末の日付で決まるので、12 月に固定する（提案 1 は 12 月の「ふたご座流星群を見る」）
 const DECEMBER = new Date('2026-12-10T10:00:00')
@@ -20,10 +21,10 @@ test.afterAll(async () => {
   await data.close()
 })
 
-test('探す画面から提案を開いて追加すると、項目のシートが開き、閉じるとやりたいリストの先頭に入っている', async ({ page, request }) => {
-  const seed = new OptionSeed(request)
+test('探す画面から提案を開いて追加すると、項目のシートが開き、閉じるとやりたいリストの先頭に入っている', async ({ page }) => {
+  const seed = new OptionSeed(page.request)
   await seed.add('前からあるもの')
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const screen = new SuggestionsScreen(page)
   await screen.openExplore()
 
@@ -66,8 +67,8 @@ test('探す画面から提案を開いて追加すると、項目のシート�
   await expect(wish.titleCells()).toHaveText([gem.title, '前からあるもの'])
 })
 
-test('追加したシートの AI に聞くは、最初の一歩を聞く相談文になる', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+test('追加したシートの AI に聞くは、最初の一歩を聞く相談文になる', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const screen = new SuggestionsScreen(page)
   await screen.openSuggestion(GEMINIDS)
   await screen.add()
@@ -79,8 +80,8 @@ test('追加したシートの AI に聞くは、最初の一歩を聞く相談�
   await expect(sheet.button('💬 AI に相談')).toHaveCount(0)
 })
 
-test('ボタンからシートを開き直して取り消すと、やりたいリストから消え、ボタンが戻る', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+test('ボタンからシートを開き直して取り消すと、やりたいリストから消え、ボタンが戻る', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const screen = new SuggestionsScreen(page)
   await screen.openSuggestion(GEMINIDS)
   await screen.add()
@@ -95,12 +96,12 @@ test('ボタンからシートを開き直して取り消すと、やりたい�
   await undo.click()
   await expect(sheet.sheet()).toBeHidden()
   await expect(screen.addButton()).toHaveText('やりたいリストに追加')
-  expect(await new OptionSeed(request).pendingTitles()).not.toContain(gem.title)
+  expect(await new OptionSeed(page.request).pendingTitles()).not.toContain(gem.title)
 })
 
-test('達成記録がある項目を取り消すときだけ、確かめてから消す', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
-  const seed = new OptionSeed(request)
+test('達成記録がある項目を取り消すときだけ、確かめてから消す', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
+  const seed = new OptionSeed(page.request)
   await seed.achieve(await seed.addSuggestion(GEMINIDS, gem.title))
   const screen = new SuggestionsScreen(page)
   await screen.openSuggestion(GEMINIDS)
@@ -133,9 +134,9 @@ test('シートを開いたまま戻ると、シートだけが閉じて提案�
   await expect(page).toHaveURL('/suggestions')
 })
 
-test('提案から追加した項目は、やりたいリストのシートにも最初の一歩と AI に聞くが出る', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
-  await new OptionSeed(request).addSuggestion(GEMINIDS, gem.title)
+test('提案から追加した項目は、やりたいリストのシートにも最初の一歩と AI に聞くが出る', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
+  await new OptionSeed(page.request).addSuggestion(GEMINIDS, gem.title)
   await page.goto('/')
   const sheet = new OptionSheetScreen(page)
   await sheet.openFromCard(gem.title)
@@ -147,8 +148,8 @@ test('提案から追加した項目は、やりたいリストのシートに�
   await expect(sheet.button('🎉 やった')).toBeVisible()
 })
 
-test('追加を押してシートが開く前に関連へ移っても、移った先の提案は変わらず、戻っても勝手にシートは開かない', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+test('追加を押してシートが開く前に関連へ移っても、移った先の提案は変わらず、戻っても勝手にシートは開かない', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const [related] = gem.related
   if (related === undefined) throw new Error(`提案 ${GEMINIDS} に関連がない`)
   const screen = new SuggestionsScreen(page)
@@ -174,11 +175,11 @@ test('追加を押してシートが開く前に関連へ移っても、移っ�
   await expect(screen.heading()).toHaveText(gem.hook)
   await expect(add).toHaveText('やりたいリストにあります')
   await expect(sheet.sheet()).toBeHidden()
-  expect(await new OptionSeed(request).pendingTitles()).toContain(gem.title)
+  expect(await new OptionSeed(page.request).pendingTitles()).toContain(gem.title)
 })
 
-test('関連の提案へ移り、戻るで元の提案に戻れる。タグを押すとタグの一覧に移る', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+test('関連の提案へ移り、戻るで元の提案に戻れる。タグを押すとタグの一覧に移る', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const { related: relatedSuggestions, tags } = gem
   const [related] = relatedSuggestions
   const [tag] = tags
@@ -212,8 +213,8 @@ test('関連の提案へ移り、戻るで元の提案に戻れる。タグを�
   await expect(page).toHaveURL(`/suggestions/${GEMINIDS}`)
 })
 
-test('テーマの「すべて N 件」でテーマの一覧に移り、チップで絞っていても全件を出す。戻るで探す画面に戻る', async ({ page, request }) => {
-  const { themes, suggestions } = await new SuggestionData(request).catalog()
+test('テーマの「すべて N 件」でテーマの一覧に移り、チップで絞っていても全件を出す。戻るで探す画面に戻る', async ({ page }) => {
+  const { themes, suggestions } = await new SuggestionData(page.request).catalog()
   const [theme] = themes
   if (theme === undefined) throw new Error('テーマがない')
   const inTheme = suggestions.filter((s) => s.themeId === theme.id)
@@ -296,9 +297,9 @@ test('提案を開いて戻ると、離れたときのスクロール位置に�
   await restored.toBe(before)
 })
 
-test('やったリストにある提案は、押すとやったリストと同じシートが開き、行にも「やった」が付く', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
-  const seed = new OptionSeed(request)
+test('やったリストにある提案は、押すとやったリストと同じシートが開き、行にも「やった」が付く', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
+  const seed = new OptionSeed(page.request)
   await seed.complete(await seed.addSuggestion(GEMINIDS, gem.title))
   const screen = new SuggestionsScreen(page)
   await screen.openSuggestion(GEMINIDS)
@@ -319,11 +320,11 @@ test('やったリストにある提案は、押すとやったリストと同�
   await expect(screen.row(gem.hook)).toContainText('やった')
 })
 
-test('別の端末で先に追加されていたら「もう追加してあります」と出し、その項目のシートを開く', async ({ page, request }) => {
-  const gem = await new SuggestionData(request).detail(GEMINIDS)
+test('別の端末で先に追加されていたら「もう追加してあります」と出し、その項目のシートを開く', async ({ page }) => {
+  const gem = await new SuggestionData(page.request).detail(GEMINIDS)
   const screen = new SuggestionsScreen(page)
   await screen.openSuggestion(GEMINIDS)
-  await new OptionSeed(request).addSuggestion(GEMINIDS, gem.title)
+  await new OptionSeed(page.request).addSuggestion(GEMINIDS, gem.title)
 
   await screen.add()
   await expect(screen.toast()).toHaveText('もう追加してあります')

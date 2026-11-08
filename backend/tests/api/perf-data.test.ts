@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { PerfDataGenerator, SeededRandom, TestDatabaseGuard } from "../../db/perf-data/PerfDataGenerator";
+import { PERF_SESSION_KEY, PerfDataGenerator, SeededRandom, TestDatabaseGuard } from "../../db/perf-data/PerfDataGenerator";
 import type { PerfDataCounts } from "../../db/perf-data/PerfDataGenerator";
 import { PgDatabase } from "../../src/infra/PgDatabase";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
@@ -12,9 +12,11 @@ const COUNTS: PerfDataCounts = {
   completedOptions: 2,
   achievements: 7,
   events: 9,
+  usersWithData: 1,
+  emptyUsers: 0,
 };
 
-const pool = new PgPoolFactory(process.env, console).create();
+const pool = new PgPoolFactory(process.env, console, "DATABASE_URL").create();
 const db = new PgDatabase(pool, new PromMetrics());
 
 afterAll(async () => {
@@ -64,6 +66,24 @@ describe("PerfDataGenerator", () => {
     expect(rows[0]).toEqual({ n: 5 });
   });
 
+  // metrics.md §1: ほかの人の行が混ざっていても、測る人の行をインデックスで絞れることを確かめるため
+  it("gives every user with data the same rows, adds empty users, and knows the session key of the measured user", async () => {
+    await new PerfDataGenerator(db, { ...COUNTS, usersWithData: 3, emptyUsers: 2 }, new SeededRandom(1), new Date()).generate();
+    const { rows } = await pool.query(
+      `SELECT u.id, (SELECT COUNT(*) FROM options o WHERE o.user_id = u.id) AS options,
+              (SELECT COUNT(*) FROM achievements a WHERE a.user_id = u.id) AS achievements
+         FROM users u ORDER BY u.id`,
+    );
+    expect(rows).toEqual([
+      { id: 1, options: 5, achievements: 7 },
+      { id: 2, options: 5, achievements: 7 },
+      { id: 3, options: 5, achievements: 7 },
+      { id: 4, options: 0, achievements: 0 },
+      { id: 5, options: 0, achievements: 0 },
+    ]);
+    const { rows: found } = await pool.query("SELECT id AS user_id FROM users WHERE session_hash = sha256(convert_to($1, 'UTF8'))", [PERF_SESSION_KEY]);
+    expect(found).toEqual([{ user_id: 1 }]);
+  });
 });
 
 describe("SeededRandom", () => {
