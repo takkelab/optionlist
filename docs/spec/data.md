@@ -154,9 +154,11 @@
 | `ol_cleanup` | する | 削除のジョブ（§5）だけ | users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） | `USING (true)`（SELECT・DELETE のポリシーだけ） |
 | `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） | なし（表の権限がない） |
 | `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | 関数とビューの中で必要な表だけを読む・書く | `USING (true) WITH CHECK (true)` |
+| `ol_incident` | しない | 障害対応で中身を見るときだけ（docs/decisions/0043） | users・options・achievements・events の SELECT だけ | `USING (true)`（SELECT のポリシーだけ） |
 
-- 本番では、中身を見るのは障害対応のときだけにし、Cloud SQL の IAM の管理用ユーザーで入る（docs/decisions/0043）
-- `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer` だけ（testing.md §7 で確かめる）
+- 本番で中身を見るのは障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに `ol_incident` を付け（`GRANT ol_incident TO <IAM のユーザー>`）、終わったらすぐ外す（`REVOKE`）。付けた・外したことは Cloud Audit Logs に残り、日付と理由を `docs/ops/data-access.md` に書く。IAM の管理用ユーザーそのものには、利用者の表のポリシーを付けない（ふだんは 0 行しか見えない）
+- `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer`・`ol_incident` だけ（testing.md §7 で確かめる）
+- `ol_app` は、ほかの `ol_*` ロールのメンバーにしない（ポリシーは `TO` に書いたロールのメンバーにも効くので、メンバーになると全員の行が見える。PostgreSQL 16 からは、ロールを作ったロールに自動でメンバーシップが付くことがあるので、`ol_*` を作るのは `ol_app` 以外のロールで行う）
 
 ### RLS
 - users・options・achievements は `ENABLE ROW LEVEL SECURITY` と `FORCE ROW LEVEL SECURITY`（持ち主にも効かせる）にする。ポリシーは `TO <ロール>` でロールごとに分けて付ける（上の表の右の列）。ポリシーがないロールは、権限があっても 1 行も読めない・書けない
@@ -174,7 +176,7 @@ RLS の中では「鍵から人を探す」ことができない（まだ誰か�
 |------|----------|------|
 | `auth_find_user(session_hash bytea)` | `(user_id bigint, last_seen_at timestamptz)`。なければ 0 行 | 鍵のハッシュから人を探す。`last_seen_at` も返すので、「今日もう書いたか」（api.md §6）のために users を読み直さない |
 | `auth_create_user(session_hash bytea, ip_hash bytea)` | `(status text, user_id bigint, retry_after_seconds int)` | その IP から 1 時間に作ったアカウントが上限（api.md §6）未満なら、users に 1 行入れて `ok` と ID を返す。上限なら `rate_limited`。どちらでも auth_attempts に 1 行入れる |
-| `auth_restore(code_hash bytea, new_session_hash bytea, ip_hash bytea, current_user_id bigint, replace boolean)` | `(status text, user_id bigint, retry_after_seconds int, local_item_count int)` | 先に回数を数え、上限なら（コードが合っていても）`rate_limited`。合わなければ `not_found`。合っていて、`current_user_id` がコードの人と別で、その人に項目か達成があり、`replace` が false なら、何も変えずに `needs_confirm` とその件数を返す。それ以外で合えば、`session_hash` を置き換え、`recovery_code_hash` を NULL にして `ok` と ID を返す（古いアカウントを消すのはアプリ。api.md §6）。どの結果でも auth_attempts に 1 行入れる |
+| `auth_restore(code_hash bytea, new_session_hash bytea, ip_hash bytea, current_user_id bigint, replace boolean)` | `(status text, user_id bigint, retry_after_seconds int, local_item_count int)` | 先に回数を数え、上限なら（コードが合っていても）`rate_limited`。合わなければ `not_found`。合っていて、`current_user_id` がコードの人と別で、その人に項目か達成があり、`replace` が false なら、何も変えずに `needs_confirm` と、その人の項目（options）の件数を返す。それ以外で合えば、`session_hash` を置き換え、`recovery_code_hash` を NULL にして `ok` と ID を返す（古いアカウントを消すのはアプリ。api.md §6）。どの結果でも auth_attempts に 1 行入れる |
 
 ## 5. 保存期間と削除（docs/decisions/0040）
 | 消すもの | 条件 | 消し方 |
@@ -197,5 +199,6 @@ Cloud SQL の自動バックアップと時点復旧は、**インスタンス�
 - 週 1 回（日曜 5 時〈日本時間〉）、Cloud Run Job が `ol_migrator` で `pg_dump --enable-row-security` を流し、`optionlist_production` の DB だけを別の入れ物（`optionlist-backups`、35 日で消える）に書き出す（`--enable-row-security` を付けないと、RLS のある表で止まる。`ol_migrator` は `USING (true)` なので全員の行が出る）
 - 写真の入れ物は、消したものを 7 日間戻せる設定（soft delete）にする
 - 戻すとき: 自動バックアップか時点復旧で**新しい一時的なインスタンス**を作り、そこから `optionlist_production` の DB だけを書き出して、本番の DB に入れ直す（ほかの DB は戻さない）。週 1 の書き出しから戻すときも、入れ直すのは `optionlist_production` だけ。戻したときに行と写真の食い違いがあれば、行のない写真は消し、写真のない行は `photo_filename` を NULL にする
-- 四半期に 1 回、`npm run ops:restore-drill` で、最新の自動バックアップを一時的なインスタンスに戻し、`ol_migrator` で `optionlist_production` の表ごとの件数と、行と写真の食い違いを数えて、本番と比べる（metrics.md §8）。**本番の件数が 0 のときは失敗にする**（数え方の誤りで、0 件どうしが一致して成功に見えるのを防ぐ）。終わったら一時的なインスタンスを消す
+- 四半期に 1 回、`npm run ops:restore-drill -- <staging|production>` で、最新の自動バックアップを一時的なインスタンス（名前は `restore-drill-<YYYYMMDDHHmm>`。Cloud SQL は消したインスタンスの名前をしばらく使い直せないので、毎回変える）に戻し、`ol_migrator` で `optionlist_<env>` の利用者の表（users・options・achievements）の件数と、行と写真の食い違いを数えて、今の `optionlist_<env>` と比べる（metrics.md §8）。**今の利用者の表が 0 件のときは失敗にする**（数え方の誤りで、0 件どうしが一致して成功に見えるのを防ぐ。マスターデータは件数に含めない）。終わったら一時的なインスタンスを消す。結果は `docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの件数 | 食い違い | 結果 |`）に 1 行足す
+- 訓練を確認用（`staging`）でもできるのは、仕組みを本番の前に確かめるため（R10）。本番の訓練は、本番に利用者の行が入ってから（公開の 1 段目。docs/decisions/0045）行い、その後は四半期ごとに本番で行う
 - 一時的なインスタンスは、運営者だけが触る（確認用の環境ではない）。確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）

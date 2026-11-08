@@ -150,7 +150,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
 - 完了の条件
   - 共通の条件
-  - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、どの `ol_*` ロールも BYPASSRLS を持たず、`ol_app` のポリシーがあることも SQL で確かめる）
+  - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、testing.md §7 の 2 のロールとポリシーの確かめ〈BYPASSRLS がない、`ol_app`・`PUBLIC` 宛てのポリシーが各表 1 本で決まった式だけ、`ol_app` がほかの `ol_*` のメンバーでない、`USING (true)` が許可したロールにしかない〉と同じ SQL を流す。マイグレーションのテストと同じ SQL のファイル〈`backend/db/checks/rls-checks.sql`〉を使う）
   - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
   - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
   - `git grep -n -E "private_key|BEGIN (RSA )?PRIVATE KEY" -- . ":!docs"` が 0 件（鍵をリポジトリに置いていない。この行のような文書は除く）
@@ -166,24 +166,26 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm run infra:check -- production` が Scheduler のジョブ（ENABLED、毎日 4 時）も確かめて終了コード 0
 
 ### R10. バックアップ・監視・利用状況（docs/decisions/0041・0042・0043）
-- 週 1 の書き出しの Job（`ol_migrator` で `pg_dump --enable-row-security`、`optionlist_production` だけ）と入れ物、写真の soft delete、`npm run ops:restore-drill`（新しい一時的なインスタンスに戻して `optionlist_production` を数える。data.md §6）
+- 週 1 の書き出しの Job（`ol_migrator` で `pg_dump --enable-row-security`、`optionlist_production` だけ）と入れ物、写真の soft delete、`npm run ops:restore-drill -- <staging|production>`（新しい一時的なインスタンスに戻して `optionlist_<env>` の利用者の表を数える。data.md §6）
 - アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
 - 集計のビュー（`usage_*`）と `ol_metrics`、`npm run metrics:usage` を 1 人あたりの指標に（metrics.md §6）
 - 完了の条件
   - 共通の条件
   - `npm run infra:check -- instance` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護を確かめ、`npm run infra:check -- production` が、写真の soft delete・書き出しの Job と Scheduler・アラートのポリシーと死活監視・予算のアラートを確かめて、どちらも終了コード 0
-  - `npm run ops:restore-drill` が終了コード 0 で、`docs/ops/restore-drills.md` に結果（`optionlist_production` の表ごとの件数が本番と一致し、0 件ではなく、食い違いが 0 件）が 1 行増える。終わったあと `gcloud sql instances list --filter="name~restore-drill"` が 0 件（一時的なインスタンスを消した）
+  - 確認用で自分のデータ（項目・達成・写真）を作ったうえで、`npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` の表に `| optionlist_staging |` の行（利用者の表の件数が今の確認用と一致し、0 件ではなく、食い違いが 0 件）が 1 行増える。本番は、まだ利用者の行がないので、ここでは訓練しない（R11 の 1 段目で行う。data.md §6）
+  - 訓練のあと `gcloud sql instances list --filter="name:restore-drill-*" --format="value(name)"` が何も出さない（一時的なインスタンス〈`restore-drill-<日時>`。data.md §6〉を消した）
   - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
   - `METRICS_DATABASE_URL=<確認用の接続先> npm run metrics:usage` が、metrics.md §6 のすべての指標を出す
   - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
 
 ### R11. 公開（docs/decisions/0045）
 - `docs/ops/launch-checklist.md` に、自分だけの 2 週間・知人数人・一般公開のそれぞれの確認の項目を `- [ ]` で書き、終わったものを `- [x]` にする
+- 1 段目（自分だけの 2 週間）の間に、本番で最初の復旧の訓練（`npm run ops:restore-drill -- production`）を行う（data.md §6）
 - 実機での結果（iPhone のホーム画面に追加したときに同じアカウントか）を書き、違ったら screens.md §9 と docs/decisions/ を直す
 - プライバシーポリシー・利用規約の文面を確定し、`PUBLIC_INDEXING=true` にして `noindex` を外す
 - 完了の条件
   - 共通の条件
   - `grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0（終わっていない項目がない）
-  - `docs/ops/restore-drills.md` に、本番の訓練の記録が 1 回以上ある（`grep -c optionlist_production docs/ops/restore-drills.md` が 1 以上）
+  - `docs/ops/restore-drills.md` の表に、本番の訓練の成功の行が 1 行以上ある（`grep -c "| optionlist_production |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上。R10 の行は `optionlist_staging` なので数えられない）
   - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
   - `npm run infra:check -- production` が終了コード 0

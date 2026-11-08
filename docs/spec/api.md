@@ -30,7 +30,7 @@
 | GET | `/api/suggestions/:id` | 提案 1 件（豆知識・最初の一歩・タグ・関連）。関連はタグを共有する提案を、共有するタグの多い順（同じなら id 順）に最大 5 件。自分は含めない | 200 `SuggestionDetail` |
 | GET | `/api/account` | 今の端末のアカウントの状態（§6）。アカウントを作らない | 200 `AccountStatus` |
 | POST | `/api/account/recovery-code` | 復旧コードを発行する（作り直すと前のコードは使えなくなる）。アカウントがなければ 404 | 201 `RecoveryCode` |
-| POST | `/api/account/restore` | 復旧コードで、このアカウントに移る `{ code }`。Cookie を新しい鍵で入れ直す（§6） | 200 `AccountStatus` |
+| POST | `/api/account/restore` | 復旧コードで、このアカウントに移る `RestoreRequest`（`{ code, replace? }`）。Cookie を新しい鍵で入れ直す。この端末の別のアカウントのデータが消えるのに `replace` がなければ 409 `RestoreConflict`（§6） | 200 `AccountStatus` |
 | DELETE | `/api/account` | すべてのデータ（アカウント・項目・達成・写真）を消し、Cookie も消す。アカウントがなくても成功 | 204 |
 | POST | `/api/events` | 利用イベントを保存 `{ events: Event[] }`。`occurredAt` は ISO 8601 の日時。アカウントがなくても受け取る（アカウントは作らない） | 202（本文なし） |
 | GET | `/api/metrics` | 実行時メトリクス（Prometheus のテキスト形式）。`Authorization: Bearer <METRICS_TOKEN>` が合わなければ 404（docs/decisions/0038） | 200 |
@@ -86,6 +86,8 @@ type SuggestionDetail = SuggestionSummary & { trivia: string; firstStep: string;
 type AccountStatus = { hasAccount: boolean; hasRecoveryCode: boolean; createdAt: string | null }
 // code は 4 文字ずつハイフンで区切った 16 文字（ABCD-EFGH-JKMN-PQRS）。この応答でしか返さない
 type RecoveryCode = { code: string }
+// replace: この端末の別のアカウントを消して移ってよいか（確認のあとで true にして送り直す）
+type RestoreRequest = { code: string; replace?: boolean }
 type Event = {
   type: 'client_error' // screens.md §8
   payload: Record<string, unknown>
@@ -97,6 +99,8 @@ type ApiError = {
     message: string
   }
 }
+// POST /api/account/restore の 409。localItemCount はこの端末のアカウントの項目（options）の件数（確認の文「やりたいこと（N 件）」に出す）
+type RestoreConflict = ApiError & { localItemCount: number }
 ```
 
 - ID は DB では `BIGINT` だが、API では `number` で返す（2^53 を超えるまで使うことはない）

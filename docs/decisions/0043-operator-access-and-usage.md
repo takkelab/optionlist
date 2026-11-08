@@ -7,7 +7,7 @@
 ## 決めたこと
 - `npm run metrics:usage` は `ol_metrics` ロールで、件数と日数だけを返す集計のビュー（`usage_weekly` など）を読む。`ol_metrics` は options・achievements・users の表そのものを読めない（タイトルと写真の名前は見えない）
 - 指標を 1 人あたりに直す。主に見るのは「その週に使った人のうち、1 回以上達成した人の割合」と「使っている人 1 人あたりの週の達成数」（metrics.md §6）
-- 中身を見るのは、障害対応のときだけにする。そのときは Cloud SQL の IAM の管理用ユーザーで入り、Cloud Audit Logs のデータアクセスのログに残す。見た日と理由を `docs/ops/data-access.md` に書く
+- 中身を見るのは、障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに、利用者の表を読むだけのロール `ol_incident`（`USING (true)` の SELECT のポリシーだけを持つ。data.md §4）を付けて入り、終わったらすぐ外す。IAM のユーザーそのものにはポリシーを付けないので、ふだんは 0 行しか見えない（RLS は FORCE で、BYPASSRLS はどのロールにも付けないため。0034）。付け外しと読んだことは Cloud Audit Logs に残す。見た日と理由を `docs/ops/data-access.md` に書く
 - 確認用の環境では制限しない（自分が作ったデータだけがあるため）
 
 ## 理由
