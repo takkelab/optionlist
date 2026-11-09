@@ -29,6 +29,8 @@
 - `PHOTO_BUCKET` を必須にしないと、設定を忘れたとき、写真が Cloud Run のディスクに黙って置かれ、再起動で消える
 - GitHub Actions のサービスコンテナは、起動の引数（`-scheme http` など）を渡せない。既定の https は自己署名の証明書なので、つなぐ側で証明書の確認を外すことになる。手元で Docker を起動していないときに `npm test` 全体を止めないよう、手元だけは飛ばす（ユーザーと相談して決めた）
 
+- アップロードの p95 の目標（300ms。metrics.md §4）は変えない。sharp で作り直すようにしたあとの CI の値は 53.2ms（作り直しにいちばん時間がかかる 1MB のノイズの JPEG を 20 回）で、0037 の見込み（50〜150ms 遅くなる）を足しても余裕がある
+
 ## 影響
 - backend: `repositories/PhotoFiles.ts`・`GcsPhotoFiles.ts`・`LocalPhotoFiles.ts`・`AchievementRepository.ts`、`services/PhotoRebuilder.ts`・`AchievementPhotoService.ts`・`errors.ts`、`controllers/AchievementPhotoController.ts`、`middleware/ApiGuards.ts`・`WriteRateLimit.ts`、`infra/AppConfig.ts`、`server.ts`、`AppAssembly.ts`、マイグレーション `20261109030405_photo_bytes.sql`、性能用データ
 - frontend: `api/client.ts`（`PhotoRefusedError`）、`lib/OptionListActions.ts`

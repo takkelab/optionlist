@@ -1,3 +1,4 @@
+import { AppError } from "../../src/services/errors";
 import type { PhotoRebuilder } from "../../src/services/PhotoRebuilder";
 
 // 読めない画像に混ぜる印
@@ -11,8 +12,8 @@ export class FakePhotoRebuilder implements PhotoRebuilder {
     this.#size = size;
   }
 
-  async rebuild(bytes: Buffer): Promise<Buffer | null> {
-    if (bytes.includes(UNREADABLE)) return null;
+  async rebuild(bytes: Buffer): Promise<Buffer> {
+    if (bytes.includes(UNREADABLE)) throw new AppError("VALIDATION_ERROR", "写真を画像として読めない");
     return Buffer.alloc(this.#size, 1);
   }
 

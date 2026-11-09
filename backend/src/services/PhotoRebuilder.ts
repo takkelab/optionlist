@@ -1,8 +1,9 @@
 import sharp from "sharp";
+import { AppError } from "./errors";
 
 export interface PhotoRebuilder {
-  // 作り直した JPEG。画像として読めなければ null
-  rebuild(bytes: Buffer): Promise<Buffer | null>;
+  // 作り直した JPEG。画像として読めなければ VALIDATION_ERROR（400）を投げる
+  rebuild(bytes: Buffer): Promise<Buffer>;
 }
 
 const LONG_SIDE = 1280;
@@ -21,15 +22,16 @@ export class SharpPhotoRebuilder implements PhotoRebuilder {
     this.#maxInputPixels = maxInputPixels;
   }
 
-  async rebuild(bytes: Buffer): Promise<Buffer | null> {
+  async rebuild(bytes: Buffer): Promise<Buffer> {
     try {
       const image = sharp(bytes, { failOn: "error", limitInputPixels: this.#maxInputPixels });
       const rotated = image.rotate();
       const resized = rotated.resize({ width: LONG_SIDE, height: LONG_SIDE, fit: "inside", withoutEnlargement: true });
       const encoded = resized.jpeg({ quality: QUALITY });
       return await encoded.toBuffer();
-    } catch {
-      return null;
+    } catch (error) {
+      // sharp のエラーは中身を読めない・大きすぎるといった入力の問題（api.md §3 の 400）。元のエラーは cause に残す
+      throw new AppError("VALIDATION_ERROR", "写真を画像として読めない", null, {}, error);
     }
   }
 }

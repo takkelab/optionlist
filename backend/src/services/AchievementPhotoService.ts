@@ -65,7 +65,6 @@ export class AchievementPhotoService implements AchievementPhotoUseCases {
       return store.photoUsage(achievementId);
     });
     const rebuilt = await this.#rebuilder.rebuild(bytes);
-    if (rebuilt === null) throw new AppError("VALIDATION_ERROR", "写真を画像として読めない");
     if (usage.count + 1 > this.#quota.maxCount || usage.bytes + rebuilt.length > this.#quota.maxBytes) {
       throw new AppError("PHOTO_LIMIT_REACHED", "写真はこれ以上保存できない");
     }

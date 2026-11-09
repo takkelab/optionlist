@@ -21,8 +21,9 @@ export class AppError extends Error {
   readonly #retryAfterSeconds: number | null;
   readonly #extra: Record<string, number>;
 
-  constructor(code: ErrorCode, message: string, retryAfterSeconds: number | null = null, extra: Record<string, number> = {}) {
-    super(message);
+  // cause は元のエラー（応答には出さない。調べるとき用）
+  constructor(code: ErrorCode, message: string, retryAfterSeconds: number | null = null, extra: Record<string, number> = {}, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.#code = code;
     this.#retryAfterSeconds = retryAfterSeconds;
     this.#extra = { ...extra };
