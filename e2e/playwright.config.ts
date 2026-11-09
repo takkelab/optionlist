@@ -25,6 +25,9 @@ export default defineConfig({
     // page.request の種まきは Origin を付けないので、画面と同じオリジンを付ける（backend の Origin の確認。api.md §1）
     extraHTTPHeaders: { Origin: `http://localhost:${FRONTEND_PORT}` },
     trace: 'retain-on-failure',
+    // Service Worker は止めておく。画面の殻のキャッシュがほかのテストに混ざらないように。
+    // 確かめるのは pwa.spec だけ（test.use で許す。docs/decisions/0052）
+    serviceWorkers: 'block',
   },
   webServer: [
     {

@@ -8,6 +8,7 @@ import { Toast } from '../components/Toast'
 import type { ToastKind } from '../components/Toast'
 import { CatalogCache } from '../lib/CatalogCache'
 import { ClientErrorReporter } from '../lib/ErrorReporter'
+import { FailureMessage } from '../lib/FailureMessage'
 import { ListPrefetch } from '../lib/ListPrefetch'
 import { HistoryScroll } from '../lib/ScrollMemory'
 import {
@@ -52,13 +53,15 @@ export function AppProviders({ api, suggestions, events, account, children }: Pr
     }
   }, [reporter])
 
+  // 通信できないときは、どの失敗もオフラインの文言にする（screens.md §7）。client_error には元の文言を送る（何が失敗したか分かるように）
+  const [failure] = useState(() => new FailureMessage(() => navigator.onLine))
   const error = useCallback(
     (text: string, cause: unknown) => {
       console.warn(text, cause)
       reporter.report(cause, text)
-      setToast({ text, kind: 'error' })
+      setToast({ text: failure.toastText(text), kind: 'error' })
     },
-    [reporter],
+    [reporter, failure],
   )
   const info = useCallback((text: string) => setToast({ text, kind: 'info' }), [])
   const notifier = useMemo<Notifier>(() => ({ error, info }), [error, info])

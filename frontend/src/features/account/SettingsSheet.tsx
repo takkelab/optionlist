@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react'
+import { Link } from 'react-router'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import sheet from '../../components/Sheet.module.css'
 import { useBackToClose } from '../../components/useBackToClose'
@@ -80,8 +81,16 @@ function SettingsBody({ settings }: { settings: AccountSettings }) {
       </section>
       <section className={styles.section} aria-label="データについて">
         <h3 className={styles.heading}>データについて</h3>
-        {/* プライバシーポリシー・利用規約のリンクは、ページを作る R6 で足す（docs/decisions/0049） */}
         <p className={styles.links}>5 年間使わないと、データは消えます</p>
+        {/* replace で、シートが積んだ履歴（useBackToClose）をページに置き換える。ページから戻ると 1 回で一覧に戻る（docs/decisions/0052） */}
+        <div className={styles.legalLinks}>
+          <Link to="/privacy" replace className={styles.legalLink}>
+            プライバシーポリシー
+          </Link>
+          <Link to="/terms" replace className={styles.legalLink}>
+            利用規約
+          </Link>
+        </div>
       </section>
       {hasAccount && (
         <button type="button" className={styles.removeAll} onClick={() => setRemoving(true)}>

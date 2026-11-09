@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import styles from '../../components/Dialog.module.css'
 import { useModal } from '../../components/useModal'
 import { TitleRule } from '../../lib/TitleRule'
@@ -15,10 +15,12 @@ type Props = {
   onClose: () => void
   // 成功したら true（ダイアログを閉じる）
   onSubmit: (title: string) => Promise<boolean>
+  // ボタンの下に小さく出す注記（追加で保存場所が作られることなど。screens.md §2）
+  note?: ReactNode
 }
 
 // タイトルを入力するダイアログ。一覧の追加（screens.md §2）で使う
-export function TitleDialog({ open, heading, submitLabel, initialTitle = '', onClose, onSubmit }: Props) {
+export function TitleDialog({ open, heading, submitLabel, initialTitle = '', onClose, onSubmit, note }: Props) {
   const modal = useModal(open, onClose)
   const headingId = useId()
   const [text, setText] = useState(initialTitle)
@@ -60,6 +62,7 @@ export function TitleDialog({ open, heading, submitLabel, initialTitle = '', onC
             {submitLabel}
           </button>
         </div>
+        {note}
       </form>
     </dialog>
   )
