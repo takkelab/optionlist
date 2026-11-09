@@ -1,5 +1,7 @@
 import { AppAssembly } from "./AppAssembly";
 import { LocalPhotoFiles } from "./repositories/LocalPhotoFiles";
+import { AppEnvRules, EnvAppConfig } from "./infra/AppConfig";
+import { JsonLogger, ProcessLineWriter } from "./infra/JsonLogger";
 import { PgDatabase } from "./infra/PgDatabase";
 import { PgPoolFactory } from "./infra/PgPoolFactory";
 import { PortGuard, PortInUseError } from "./infra/PortGuard";
@@ -9,29 +11,31 @@ import { SystemClock } from "./services/Clock";
 
 // エントリーポイント。具体的なクラスを new して注入し（architecture.md §3.1）、ポートを確かめてから listen する
 // controller などの組み立ては AppAssembly（テストの TestApp も同じものを使う）
+// ログは 1 行 1 つの JSON（docs/decisions/0042）
 const PORT = Number(process.env.PORT ?? 8000);
-
-const metrics = new PromMetrics();
-const app = new AppAssembly({
-  // アプリは ol_app で接続する（RLS を受ける。data.md §4）
-  db: new PgDatabase(new PgPoolFactory(process.env, console, "APP_DATABASE_URL").create(), metrics),
-  metrics,
-  photoFiles: new LocalPhotoFiles(process.env.UPLOAD_DIR ?? "uploads"),
-  clock: new SystemClock(),
-  keys: new RandomSessionKeys(),
-  ipHashSecret: process.env.IP_HASH_SECRET ?? "",
-  // 確認用・本番（https）だけ Secure を付け、名前を __Host-ol_session にする（api.md §6、architecture.md §4.3）
-  secureCookie: ["staging", "production"].includes(process.env.APP_ENV ?? ""),
-  logger: console,
-}).app();
+const logger = new JsonLogger(new ProcessLineWriter());
 const portGuard = new PortGuard(500);
 
 try {
+  // 確認用・本番で APP_ORIGIN・METRICS_TOKEN・IP_HASH_SECRET がなければ、ここで止まる（docs/decisions/0050）
+  const settings = new EnvAppConfig(process.env, new AppEnvRules()).read();
+  const metrics = new PromMetrics();
+  const app = new AppAssembly({
+    // アプリは ol_app で接続する（RLS を受ける。data.md §4）
+    db: new PgDatabase(new PgPoolFactory(process.env, logger, "APP_DATABASE_URL").create(), metrics),
+    metrics,
+    photoFiles: new LocalPhotoFiles(process.env.UPLOAD_DIR ?? "uploads"),
+    clock: new SystemClock(),
+    keys: new RandomSessionKeys(),
+    ...settings,
+    logger,
+  }).app();
   await portGuard.ensureFree(PORT);
   await app.listen(PORT);
-  console.log(`server running at: http://localhost:${PORT}`);
+  logger.info({ kind: "server_started", message: `server running at: http://localhost:${PORT}` });
 } catch (error) {
   const addressInUse = error instanceof PortInUseError || (error instanceof Error && "code" in error && error.code === "EADDRINUSE");
-  console.error(addressInUse ? portGuard.message(PORT) : error);
+  if (addressInUse) logger.error({ kind: "server_start_failed", message: portGuard.message(PORT) });
+  else logger.error({ kind: "server_start_failed", message: "起動できなかった", error });
   process.exit(1);
 }

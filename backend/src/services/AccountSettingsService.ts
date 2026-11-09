@@ -101,7 +101,7 @@ export class AccountSettingsService implements AccountUseCases {
     try {
       await this.removeAll(userId);
     } catch (error) {
-      this.#log.error(`引き継ぐ前のアカウント ${userId} を消せなかった`, error);
+      this.#log.error({ kind: "account_cleanup_error", message: "引き継ぐ前のアカウントを消せなかった", error });
     }
   }
 

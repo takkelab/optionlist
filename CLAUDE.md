@@ -26,6 +26,7 @@
 - 目標値の判定（CI と同じ）: `npm run metrics:check`。結果は `metrics-report.json`。目標値は `metrics.config.json`
 - 品質チェックスクリプト自体のテスト: `npm run test:scripts`
 - 利用状況（metrics.md §6。達成数・frontend のエラー数など）: `npm run metrics:usage`（`backend/.env` の DB を読むだけ）
+- 手元で `/api/metrics` を見る: `backend/.env` に `METRICS_TOKEN` を書いて起動し、`curl -H "Authorization: Bearer <トークン>" http://localhost:8000/api/metrics`（トークンがない・違うと 404。docs/decisions/0038）
 - PR のマージ: `npm run pr:merge -- <PR 番号>`（CI が緑のときだけマージする。その PR のブランチへ積んだ PR は、マージの前に向き先を付け替える。`gh pr merge` は使わない）
 
 # Gotchas
@@ -36,6 +37,7 @@
 - reviewer サブエージェントが「not found」で呼べない実行環境がある（`.claude/agents/` を読み込まない）。そのときは `.claude/agents/reviewer.md` の本文をそのまま汎用のエージェントに渡し、読むだけにさせる（docs/harness/incidents.md #20）
 - 利用者の表（users・options・achievements）は RLS で守っている（data.md §4）。psql やテストで中身を見るときは `DATABASE_URL`（ol_migrator。全員の行が見える）で接続する。`APP_DATABASE_URL`（ol_app）や superuser 以外のロールで見ると、`app.user_id` を設定しない限り 0 行に見える。superuser の postgres は RLS を素通りするので、アプリとしてのテストには使わない（testing.md §0）
 - 手元の PostgreSQL のサーバーの TimeZone は Asia/Tokyo。backend とテストは接続ごとに UTC にしている（`PgPoolFactory`）ので、psql で直接見た日時は 9 時間ずれて見える
+- backend の書き込み（`GET`・`HEAD` 以外）は `Origin` がないと 403。curl やテストで書くときは `-H "Origin: http://localhost:8000"`（手元は Host と同じオリジン）を付ける。API テストは `tests/fakes/TestRequests.ts`・`SessionAgent` が `http://test.local` を付ける（docs/decisions/0050）
 - テスト用 DB を使うコマンド（`npm test`・`test:e2e`・`test:perf`・`metrics:check`・`test:scripts`）は同時に流さない。`test:scripts` はマイグレーションしないので、先に `npm --prefix backend run db:migrate:test`。`metrics:check` は性能用データを入れ直すので、裏で流している間に E2E を流すと互いに壊れる（docs/harness/incidents.md #15）
 - `dev:lan` は信頼できる Wi-Fi でだけ使う。ログインがないので、同じ Wi-Fi の人から達成の写真が見え、変えられる（docs/decisions/0028）
 - 手元の性能テストの値は CI より大きく出る（SQL で 6 倍ほど。SQL の p95 が手元だけ目標を超えることがある）。悪化かどうかは、手元の値ではなく CI の `metrics-report.json` と比べる（docs/harness/incidents.md #13）。手元で性能テストを続けて流すと、2 回目以降が RSS・ヒープのテストの 120 秒のタイムアウトで落ちる（main でも起きる。原因は不明）。`metrics:check` の測り直しもこれで落ちるので、それだけなら自分の変更を疑わず CI で確かめる（#16）

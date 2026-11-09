@@ -11,7 +11,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': backend,
+      // Host は書き換えない（文字列だけで書くと Vite は changeOrigin: true にする）。backend は、手元では
+      // 書き込みの Origin を Host と比べるので、画面のオリジン（5173・4174・dev:lan の IP）のまま届ける（api.md §1。docs/decisions/0050）
+      '/api': { target: backend, changeOrigin: false },
     },
   },
 })

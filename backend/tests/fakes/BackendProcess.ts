@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
+import { TEST_METRICS_AUTH, TEST_METRICS_TOKEN } from "./TestRequests";
 
 export interface RunningBackend {
   start(): Promise<string>;
@@ -24,7 +25,8 @@ export class BackendProcess implements RunningBackend {
   async start(): Promise<string> {
     const port = await this.#freePort();
     const child = spawn(process.execPath, [...NODE_FLAGS, "--import", "tsx", "src/server.ts"], {
-      env: { ...process.env, PORT: String(port) },
+      // /api/metrics はトークンがないと 404 なので、決まったトークンで起動する（docs/decisions/0038）
+      env: { ...process.env, PORT: String(port), METRICS_TOKEN: TEST_METRICS_TOKEN },
       stdio: ["ignore", "pipe", "pipe"],
     });
     this.#child = child;
@@ -35,7 +37,7 @@ export class BackendProcess implements RunningBackend {
 
   // /api/metrics の process_resident_memory_bytes（prom-client の標準メトリクス）
   async rssBytes(): Promise<number> {
-    const text = await (await fetch(`${this.#baseUrl}/api/metrics`)).text();
+    const text = await (await fetch(`${this.#baseUrl}/api/metrics`, { headers: { Authorization: TEST_METRICS_AUTH } })).text();
     const match = /^process_resident_memory_bytes (\d+)/m.exec(text);
     if (match === null) throw new Error("/api/metrics に process_resident_memory_bytes がない");
     return Number(match[1]);

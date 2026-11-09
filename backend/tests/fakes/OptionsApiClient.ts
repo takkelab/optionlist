@@ -2,6 +2,7 @@ import type { Express } from "express";
 import request from "supertest";
 import type { Test } from "supertest";
 import type { Option } from "../../../shared/types";
+import { TEST_ORIGIN } from "./TestRequests";
 
 // 応答のうちテストで見るところ。分割代入して使う（res.body.x と 2 段たどらないように。L4）
 // setCookie は最初の Set-Cookie ヘッダー（なければ null）
@@ -46,7 +47,8 @@ export class SessionAgent implements SessionClient {
   }
 
   async send(build: Build): Promise<ApiResult> {
-    const test = build(request(this.#app));
+    // ブラウザと同じく、自分のオリジンを Origin に付ける（GET に付いても困らない。api.md §1）
+    const test = build(request(this.#app)).set("Origin", TEST_ORIGIN);
     if (this.#cookie !== null) test.set("Cookie", this.#cookie);
     const { status, body, text, headers } = await test;
     const values: unknown = headers["set-cookie"];

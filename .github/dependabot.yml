@@ -1,0 +1,20 @@
+# 依存の更新の PR を週 1 回出す（docs/decisions/0038）。脆弱性は CI の npm audit --audit-level=high でも止める（metrics.md §2）
+# package.json はルート（E2E・品質チェック）・backend・frontend の 3 つ
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

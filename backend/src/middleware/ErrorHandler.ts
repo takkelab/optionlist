@@ -1,4 +1,4 @@
-import type { ErrorRequestHandler, Response } from "express";
+import type { ErrorRequestHandler, Request, Response } from "express";
 import type { ApiError } from "../../../shared/types";
 import type { ErrorMetrics } from "../metrics/AppMetrics";
 import { AppError } from "../services/errors";
@@ -18,10 +18,10 @@ export class ErrorHandler implements ErrorMiddleware {
   }
 
   handler(): ErrorRequestHandler {
-    return (error: unknown, _req, res, _next) => this.#handle(error, res);
+    return (error: unknown, req, res, _next) => this.#handle(error, req, res);
   }
 
-  #handle(error: unknown, res: Response): void {
+  #handle(error: unknown, req: Request, res: Response): void {
     if (error instanceof AppError) {
       const retryAfter = error.retryAfterSeconds();
       if (retryAfter !== null) res.setHeader("Retry-After", String(retryAfter));
@@ -32,7 +32,15 @@ export class ErrorHandler implements ErrorMiddleware {
       res.status(400).json(this.#body("VALIDATION_ERROR", "リクエストの本文を読めない"));
       return;
     }
-    this.#logger.error("想定外のエラー", error);
+    // route はルートの定義（/api/options/:id）にする。実際の URL には ID や写真の名前が入るため（docs/decisions/0042）
+    const { route } = req;
+    this.#logger.error({
+      kind: "unhandled_error",
+      message: "想定外のエラー",
+      error,
+      route: route === undefined ? "unmatched" : String(route.path),
+      status: 500,
+    });
     this.#metrics.countUnhandledError();
     res.status(500).json(this.#body("INTERNAL_ERROR", "サーバーで想定外のエラーが起きた"));
   }

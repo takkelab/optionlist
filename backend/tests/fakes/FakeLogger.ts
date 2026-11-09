@@ -1,14 +1,24 @@
-import type { Logger } from "../../src/middleware/Middleware";
+import type { LogEntry, Logger } from "../../src/middleware/Middleware";
 
-// 想定外のエラーのログを console に出さずに覚えておく
+// ログを console に出さずに覚えておく
 export class FakeLogger implements Logger {
-  readonly #errors: unknown[] = [];
+  readonly #entries: LogEntry[] = [];
+  readonly #infos: LogEntry[] = [];
 
-  error(_message: string, error: unknown): void {
-    this.#errors.push(error);
+  error(entry: LogEntry): void {
+    this.#entries.push(entry);
   }
 
+  info(entry: LogEntry): void {
+    this.#infos.push(entry);
+  }
+
+  // error で渡されたエラー（渡されなかった行は除く）
   errors(): unknown[] {
-    return this.#errors;
+    return this.#entries.flatMap((entry) => ("error" in entry ? [entry.error] : []));
+  }
+
+  entries(): LogEntry[] {
+    return [...this.#entries];
   }
 }

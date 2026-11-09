@@ -22,14 +22,14 @@ describe("HealthService.checkDb", () => {
 describe("HealthController", () => {
   it("answers ok for the server", () => {
     const res = new FakeResponse();
-    new HealthController(new FakeHealthChecker({ status: "ok" })).server(res);
+    new HealthController(new FakeHealthChecker({ status: "ok" }), true).server(res);
     expect(res.statusCode()).toBe(200);
     expect(res.body()).toEqual({ status: "ok" });
   });
 
   it("answers 200 when the database is reachable", async () => {
     const res = new FakeResponse();
-    await new HealthController(new FakeHealthChecker({ status: "ok" })).database(res);
+    await new HealthController(new FakeHealthChecker({ status: "ok" }), true).database(res);
     expect(res.statusCode()).toBe(200);
     expect(res.body()).toEqual({ status: "ok" });
   });
@@ -37,8 +37,15 @@ describe("HealthController", () => {
   it("answers 503 with the reason when the database is unreachable", async () => {
     const res = new FakeResponse();
     const result = { status: "error", message: "timeout" } as const;
-    await new HealthController(new FakeHealthChecker(result)).database(res);
+    await new HealthController(new FakeHealthChecker(result), true).database(res);
     expect(res.statusCode()).toBe(503);
     expect(res.body()).toEqual(result);
+  });
+
+  it("answers 503 without the reason when errors are hidden (staging and production)", async () => {
+    const res = new FakeResponse();
+    await new HealthController(new FakeHealthChecker({ status: "error", message: "timeout" }), false).database(res);
+    expect(res.statusCode()).toBe(503);
+    expect(res.body()).toEqual({ status: "error" });
   });
 });

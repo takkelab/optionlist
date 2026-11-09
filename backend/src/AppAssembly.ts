@@ -12,7 +12,13 @@ import { OptionInput } from "./controllers/OptionInput";
 import { OptionsController } from "./controllers/OptionsController";
 import { PathId } from "./controllers/PathId";
 import { SuggestionsController } from "./controllers/SuggestionsController";
+import { AppEnvRules } from "./infra/AppConfig";
+import type { AppEnv } from "./infra/AppConfig";
 import type { Database, UserScopes } from "./infra/PgDatabase";
+import { ApiNoStore, ApiRequests, JsonContentType, OriginGuard } from "./middleware/ApiGuards";
+import { WriteRateLimit } from "./middleware/WriteRateLimit";
+import { MemoryRateLimiter } from "./services/RateLimiter";
+import type { RateLimit } from "./services/RateLimiter";
 import type { PromMetrics } from "./metrics/PromMetrics";
 import { ErrorHandler } from "./middleware/ErrorHandler";
 import type { Logger } from "./middleware/Middleware";
@@ -56,11 +62,25 @@ export type AssemblyDeps = {
   clock: Clock;
   keys: SessionKeySource;
   ipHashSecret: string;
-  // 確認用・本番（https）だけ Secure を付け、名前を __Host-ol_session にする（api.md §6）
-  secureCookie: boolean;
+  // 確認用・本番では Cookie に Secure を付けて名前を __Host-ol_session にし（api.md §6）、/api/health/db の message を隠す（api.md §2）
+  appEnv: AppEnv;
+  // Origin の確認に使う自分のオリジン。null なら手元の扱い（リクエストの Host と比べる。api.md §1）
+  appOrigin: string | null;
+  metricsToken: string;
+  // 書き込みの回数の制限（api.md §6）。なければ DEFAULT_RATE_LIMITS。性能テストは同じ人で何百回も書くので緩める
+  rateLimits?: RateLimits;
   logger: Logger;
   // テストだけが足す controller（エラーを投げるルートなど）
   extraControllers?: Controller[];
+};
+
+export type RateLimits = { events: RateLimit; writes: RateLimit };
+
+const MINUTE_MS = 60 * 1000;
+// api.md §6 ※仮決め。POST /api/events は 1 つの IP から 1 分に 20 リクエスト、そのほかの書き込みは 1 アカウント 1 分に 120 回
+export const DEFAULT_RATE_LIMITS: RateLimits = {
+  events: { limit: 20, windowMs: MINUTE_MS },
+  writes: { limit: 120, windowMs: MINUTE_MS },
 };
 
 export interface AppFactory {
@@ -77,12 +97,15 @@ export class AppAssembly implements AppFactory {
   readonly #clock: Clock;
   readonly #keys: SessionKeySource;
   readonly #ipHashSecret: string;
-  readonly #secureCookie: boolean;
+  readonly #deployed: boolean;
+  readonly #appOrigin: string | null;
+  readonly #metricsToken: string;
+  readonly #rateLimits: RateLimits;
   readonly #logger: Logger;
   readonly #extraControllers: Controller[];
 
   constructor(deps: AssemblyDeps) {
-    const { db, sessionDb, metrics, photoFiles, clock, keys, ipHashSecret, secureCookie, logger, extraControllers } = deps;
+    const { db, sessionDb, metrics, photoFiles, clock, keys, ipHashSecret, logger, extraControllers } = deps;
     this.#db = db;
     this.#sessionDb = sessionDb ?? db;
     this.#metrics = metrics;
@@ -90,14 +113,18 @@ export class AppAssembly implements AppFactory {
     this.#clock = clock;
     this.#keys = keys;
     this.#ipHashSecret = ipHashSecret;
-    this.#secureCookie = secureCookie;
+    this.#deployed = new AppEnvRules().isDeployed(deps.appEnv);
+    this.#appOrigin = deps.appOrigin;
+    this.#metricsToken = deps.metricsToken;
+    this.#rateLimits = deps.rateLimits ?? DEFAULT_RATE_LIMITS;
     this.#logger = logger;
     this.#extraControllers = extraControllers ?? [];
   }
 
   app(): ExpressApp {
     const user = new SessionLocals();
-    const cookie = new SessionCookie(this.#secureCookie);
+    const cookie = new SessionCookie(this.#deployed);
+    const requests = new ApiRequests();
     const accounts = new AccountService(
       new AccountRepository(this.#sessionDb),
       new UserRepository(this.#sessionDb),
@@ -108,10 +135,18 @@ export class AppAssembly implements AppFactory {
     return new ExpressApp({
       controllers: [...this.#controllers(user, cookie, accounts), ...this.#extraControllers],
       requestMetrics: new RequestMetricsRecorder(this.#metrics),
+      guards: [new ApiNoStore(), new OriginGuard(this.#appOrigin, requests), new JsonContentType(requests)],
       session: new SessionMiddleware(accounts, cookie, user),
+      rateLimit: this.#rateLimit(requests, user),
       notFound: new NotFoundHandler(),
       errorHandler: new ErrorHandler(this.#metrics, this.#logger),
     });
+  }
+
+  #rateLimit(requests: ApiRequests, user: SessionLocals): WriteRateLimit {
+    const { events, writes } = this.#rateLimits;
+    const limiters = { events: new MemoryRateLimiter(events, this.#clock), writes: new MemoryRateLimiter(writes, this.#clock) };
+    return new WriteRateLimit(limiters, requests, user);
   }
 
   #controllers(user: SessionLocals, cookie: SessionCookie, accounts: AccountService): Controller[] {
@@ -122,8 +157,8 @@ export class AppAssembly implements AppFactory {
     const photos = new AchievementPhotoService(achievementStore, this.#photoFiles, cleanup, new PhotoFormat());
     const ids = new PathId();
     return [
-      new HealthController(new HealthService(new HealthRepository(this.#db))),
-      new MetricsController(this.#metrics),
+      new HealthController(new HealthService(new HealthRepository(this.#db)), !this.#deployed),
+      new MetricsController(this.#metrics, this.#metricsToken),
       new OptionsController({ input: new OptionInput(ids), options, user, accounts, cookie }),
       new SuggestionsController(new SuggestionService(new SuggestionRepository(this.#db, new SuggestionRowMapper())), ids, user),
       new AchievementsController(new OptionInput(ids), new AchievementService(achievementStore, this.#clock), user),

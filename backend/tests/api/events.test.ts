@@ -1,9 +1,9 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { PgDatabase } from "../../src/infra/PgDatabase";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { TestApp } from "../fakes/TestApp";
+import { TestRequests } from "../fakes/TestRequests";
 import { TestDatabase } from "../fakes/TestDatabase";
 
 // POST /api/events（api.md §2、data.md §3、testing.md §2）
@@ -25,7 +25,7 @@ afterAll(async () => {
 
 describe("POST /api/events", () => {
   it("saves the events in one statement and answers 202 without a body", async () => {
-    const res = await request(app).post("/api/events").send({ events: [event, { ...event, payload: { message: "second" } }] });
+    const res = await new TestRequests(app).write("post", "/api/events").send({ events: [event, { ...event, payload: { message: "second" } }] });
     expect(res.status).toBe(202);
     expect(res.text).toBe("");
 
@@ -42,7 +42,7 @@ describe("POST /api/events", () => {
     ["a payload over 2KB", { events: [{ ...event, payload: { message: "a".repeat(2048) } }] }],
     ["occurredAt that is not a date", { events: [{ ...event, occurredAt: "yesterday" }] }],
   ])("returns 400 for %s and saves nothing", async (_, body) => {
-    const res = await request(app).post("/api/events").send(body);
+    const res = await new TestRequests(app).write("post", "/api/events").send(body);
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
     const { rows } = await pool.query("SELECT COUNT(*) AS n FROM events");
