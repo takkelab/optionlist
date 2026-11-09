@@ -66,9 +66,20 @@
   }
 }
 
-/* シートの中身（項目のシート・設定のシート）。上の持ち手から下へ引くと閉じる（components/useSheetSwipe.ts） */
+/* 中身（.body）をシートの高さに収める。高さを決めたシート（項目のシート）でも、中身に合わせるシート（設定のシート）でも、
+   中身は残りの高さを埋め、はみ出したらスクロールする。閉じている dialog は出さないので、開いているときだけ flex にする */
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* シートの中身（項目のシート・設定のシート）。上の持ち手から下へ引くと閉じる（components/useSheetSwipe.ts）
+   height: 100% にしない。中身に合わせるシートでは 100% が堂々巡りになり、iOS 26 の Safari は 0 と扱って、
+   シートが余白の 16px だけにつぶれた（docs/harness/incidents.md #24） */
 .body {
-  height: 100%;
+  /* 元の高さは中身の高さ（auto）。flex: 1（元の高さ 0%）だと、iOS 26 の Safari はまた 0 と扱ってつぶれる */
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

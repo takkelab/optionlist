@@ -47,4 +47,5 @@
 - `python` は Microsoft Store のスタブで、実行しても何もせず終了コード 0 で終わる。スクリプトは node で書く（docs/harness/incidents.md #1）
 - Service Worker（PWA）は `npm run dev` では出ない。確かめるのは `npm --prefix frontend run build` → `npm --prefix frontend run preview`。E2E は設定で Service Worker を止めていて、確かめるのは `pwa.spec` だけ（docs/decisions/0052）
 - `frontend/public/favicon.svg` から、ビルドのときにアイコンの PNG を作る。SVG のコメントに `--` を書くと XML として壊れ、ビルドが「Input buffer has corrupt header」で落ちる
+- iPhone の Safari でだけ起きる見た目の不具合は、E2E（Chromium）でも手元の Playwright の WebKit（Windows 版）でも再現しないことがある。推測で直す前に、一時的なコードで要素の大きさ・位置（`getBoundingClientRect`・`getComputedStyle`）を `/api/events` に `client_error` として送り、`backend/.env` の DB の events で読む（終わったらコードとその行を消す）。高さの決まっていない親の中で `height: 100%` や `flex: 1`（元の高さ 0%）を使わない。iOS 26 の Safari は 0 と扱い、シートが 16px につぶれた（docs/harness/incidents.md #24）
 - ファイルの書き換えは Edit・Write ツールで行う。シェル経由（`node -e` など）で書くと `\` が消えることがあり、`node -e` は禁止している（docs/harness/incidents.md #8）
