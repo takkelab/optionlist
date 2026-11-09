@@ -8,6 +8,7 @@ import { OptionSheet } from '../OptionSheet'
 import { StatusSwitch } from '../StatusSwitch'
 import { TitleDialog } from '../TitleDialog'
 import { useOpenedOption } from '../useOpenedOption'
+import { AddDialogNote } from './AddDialogNote'
 import { AddFab } from './AddFab'
 import { SortableWishList } from './SortableWishList'
 import { TodayPick } from './TodayPick'
@@ -35,7 +36,14 @@ export function WishListPage() {
       {options !== null && <SortableWishList options={options} disabled={!loaded} onOpen={open} onReorder={reorder} />}
       <AddFab onClick={() => setAdding(true)} />
       <OptionSheet option={opened} onClose={close} actions={actions} />
-      <TitleDialog open={adding} heading="やりたいことを追加" submitLabel="追加" onClose={() => setAdding(false)} onSubmit={add} />
+      <TitleDialog
+        open={adding}
+        heading="やりたいことを追加"
+        submitLabel="追加"
+        onClose={() => setAdding(false)}
+        onSubmit={add}
+        note={<AddDialogNote open={adding} />}
+      />
     </>
   )
 }

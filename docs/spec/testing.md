@@ -58,6 +58,7 @@
 - スマホサイズ（幅 390px）で実行する。backend はテスト用 DB に向けて起動する（backend へのリクエストを `page.route` で差し替えない）
 - `npm run test:e2e` で流す（テスト用 DB のマイグレーション → frontend のビルド → Playwright）。Playwright が backend（8100 番、`backend/.env.test`）を起動し、backend がビルド済みの frontend も配る（本番と同じ形。CSP などのヘッダー〈architecture.md §4.3〉が効いた状態で画面が動くことも確かめる）。普段の開発（8000・5173）と並べて動かせる
 - 複数の人は、Playwright のブラウザのコンテキストを分けて作る（Cookie が別になる）
+- Service Worker は設定で止め（`serviceWorkers: 'block'`）、シナリオ 14 の `pwa.spec` だけで許す。キャッシュした画面の殻がほかのテストに混ざらないように（docs/decisions/0052）
 - 各テストの前に、テスト用 DB のマスターデータ以外を空にする（`e2e/support/TestData.ts`）
 - 結果は `e2e/results/` に出す（`report.json`: Playwright の JSON レポート、`ui-metrics.json`: LCP とタップ領域）。判定は `npm run metrics:check`
 - 主なシナリオ

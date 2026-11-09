@@ -128,7 +128,8 @@ test('移動に失敗したらトーストで知らせ、確認に戻って答�
   const confirm = completion.moveConfirm()
   const move = confirm.getByRole('button', { name: '移動する' })
   await move.click()
-  await expect(page.getByText('やったリストに移せませんでした')).toBeVisible()
+  // 通信できないときは、何の失敗でもオフラインの文言にする（screens.md §7）
+  await expect(page.getByText('通信できませんでした。電波のよいところでもう一度お試しください')).toBeVisible()
   await expect(confirm).toBeVisible()
 
   await network.restore()

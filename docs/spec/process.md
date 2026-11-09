@@ -147,6 +147,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 - `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
 - `npm run infra:check -- <env>`（architecture.md §4.1 の設定を gcloud で読んで確かめる）
 - `.github/workflows/deploy.yml`（main で確認用へ、Environment `production` の承認で本番へ。同じイメージ）
+- アクセスのログ（Cloud Logging の `_Default` などのバケット）の保存場所を決める。国内（asia-northeast1）に置けなければ、プライバシーポリシーの「預け先」を直す（docs/decisions/0052）
 - 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
 - 完了の条件
   - 共通の条件
@@ -189,3 +190,4 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `docs/ops/restore-drills.md` の表に、本番の訓練の成功の行が 1 行以上ある（`grep -c "| optionlist_production |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上。R10 の行は `optionlist_staging` なので数えられない）
   - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
   - `npm run infra:check -- production` が終了コード 0
+  - `git grep -n "example.invalid" -- frontend/src` が 0 件（ポリシーの仮の問い合わせ先を、専用のアドレスに差し替えた。docs/decisions/0052）

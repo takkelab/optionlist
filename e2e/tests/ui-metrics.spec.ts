@@ -23,6 +23,14 @@ test('各画面の LCP とタップ領域を測る', async ({ page }) => {
   // 種まきの API はブラウザと同じ Cookie（同じ人）で呼ぶ（api.md §6）
   const { request } = page
   await data.reset()
+  const smallTapTargets: SmallTapTarget[] = []
+  // アカウントがまだないときの追加ダイアログ（保存場所の注記とポリシーへのリンク。screens.md §2）
+  const screen = new WishListScreen(page)
+  await screen.open()
+  const firstAdd = await screen.openAddDialog()
+  const policyLink = firstAdd.getByRole('link', { name: 'プライバシーポリシー' })
+  await policyLink.waitFor()
+  smallTapTargets.push(...(await probe.smallTapTargets(page, '/（追加ダイアログ・アカウントなし）')))
   for (let i = 1; i <= SAMPLE_OPTIONS; i++) {
     const res = await request.post('/api/options', { data: { title: `やりたいこと ${i}` } })
     expect(res.status()).toBe(201)
@@ -37,20 +45,18 @@ test('各画面の LCP とタップ領域を測る', async ({ page }) => {
   const seed = new OptionSeed(request)
   for (let i = 1; i <= 5; i++) await seed.complete(await seed.add(`やったこと ${i}`))
   // 提案 1 件は関連とタグのある 1 件目、タグの一覧は 1 つ目のタグ、テーマの一覧は 1 つ目のテーマで測る
-  const screens = ['/', '/suggestions', '/suggestions/1', '/suggestions/tags/1', '/suggestions/themes/1', '/done']
+  const screens = ['/', '/suggestions', '/suggestions/1', '/suggestions/tags/1', '/suggestions/themes/1', '/done', '/privacy', '/terms']
   const suggestionsScreen = new SuggestionsScreen(page)
 
   const lcpSec: Record<string, number> = {}
-  const smallTapTargets: SmallTapTarget[] = []
-  const screen = new WishListScreen(page)
   const sheet = new OptionSheetScreen(page)
   for (const path of screens) {
     await page.goto(path)
     const heading = page.getByRole('heading', { level: 1 })
     await heading.waitFor()
-    // 一覧はカード・提案の行が出てから測る（見出しは API の応答より先に出る）
+    // 一覧はカード・提案の行が出てから測る（見出しは API の応答より先に出る）。ポリシー・規約は文章だけ
     if (path.startsWith('/suggestions')) await suggestionsScreen.waitForRows()
-    else await screen.waitUntilLoaded()
+    else if (path === '/' || path === '/done') await screen.waitUntilLoaded()
     lcpSec[path] = await probe.lcpSec(page)
     smallTapTargets.push(...(await probe.smallTapTargets(page, path)))
   }

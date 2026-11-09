@@ -45,4 +45,6 @@
 - 画面の案はキャンバス（claude.ai の Design の Artifact）で見比べて決めている。「案 B にして」のように案を名前で指定されたら、計画や決定記録の要約からではなく、その artboard を Artifact の read で読んでから作る。色は tokens.css の色に置き換える（12 色以内。docs/harness/incidents.md #14）
 - `gh: command not found` は VS Code の起動後に PATH が変わったのが原因。フルパスでしのがず、VS Code を再起動する（docs/harness/incidents.md #2）
 - `python` は Microsoft Store のスタブで、実行しても何もせず終了コード 0 で終わる。スクリプトは node で書く（docs/harness/incidents.md #1）
+- Service Worker（PWA）は `npm run dev` では出ない。確かめるのは `npm --prefix frontend run build` → `npm --prefix frontend run preview`。E2E は設定で Service Worker を止めていて、確かめるのは `pwa.spec` だけ（docs/decisions/0052）
+- `frontend/public/favicon.svg` から、ビルドのときにアイコンの PNG を作る。SVG のコメントに `--` を書くと XML として壊れ、ビルドが「Input buffer has corrupt header」で落ちる
 - ファイルの書き換えは Edit・Write ツールで行う。シェル経由（`node -e` など）で書くと `\` が消えることがあり、`node -e` は禁止している（docs/harness/incidents.md #8）
