@@ -12,6 +12,7 @@
     "metrics:usage": "node --env-file=backend/.env scripts/metrics-usage.ts",
     "check:pr": "node scripts/check-pr.ts",
     "pr:merge": "node scripts/merge-pr.ts",
+    "smoke:image": "node --env-file-if-exists=backend/.env.test scripts/smoke-image.ts",
     "lint": "oxlint",
     "test:lint-rules": "node --test --test-concurrency=2 \"tools/lint-rules/tests/*.test.ts\""
   },

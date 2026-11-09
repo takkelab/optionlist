@@ -1,4 +1,4 @@
-// npm run pr:merge -- <PR 番号>。CI（quality・pr-check）がすべて緑のときだけマージする（docs/decisions/0004）
+// npm run pr:merge -- <PR 番号>。CI（quality・pr-check・image）がすべて緑のときだけマージする（docs/decisions/0004）
 // 確かめたコミットのままマージするよう --match-head-commit を付ける
 // この PR のブランチへ積んだ PR は、マージの前に向き先をこの PR の base へ付け替える（docs/harness/incidents.md #11）
 import { GhCliCheck } from "./lib/gh-cli-check.ts";
@@ -31,7 +31,7 @@ const { headRefOid, headRefName, baseRefName, statusCheckRollup } = JSON.parse(v
   statusCheckRollup: CheckRun[];
 };
 
-const blockers = new RequiredChecksMergeGate(["quality", "pr-check"]).blockers(statusCheckRollup);
+const blockers = new RequiredChecksMergeGate(["quality", "pr-check", "image"]).blockers(statusCheckRollup);
 if (blockers.length > 0) {
   for (const blocker of blockers) console.error(`❌ ${blocker}`);
   console.error("CI が緑になるまでマージしない");

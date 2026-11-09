@@ -1,0 +1,16 @@
+# イメージに入れないもの（Dockerfile）。秘密の値（.env）と手元の依存・ビルド結果・写真は入れない
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+.git
+.github
+.claude
+docs
+e2e
+scripts
+tools
+backend/uploads
+backend/tests
+metrics-report.json

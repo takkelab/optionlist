@@ -21,6 +21,8 @@ import { MemoryRateLimiter } from "./services/RateLimiter";
 import type { RateLimit } from "./services/RateLimiter";
 import type { PromMetrics } from "./metrics/PromMetrics";
 import { ErrorHandler } from "./middleware/ErrorHandler";
+import { FrontendFiles } from "./middleware/FrontendFiles";
+import { ScreenHeaders } from "./middleware/ScreenHeaders";
 import type { Logger } from "./middleware/Middleware";
 import { NotFoundHandler } from "./middleware/NotFoundHandler";
 import { RequestMetricsRecorder } from "./middleware/RequestMetrics";
@@ -69,6 +71,10 @@ export type AssemblyDeps = {
   // Origin の確認に使う自分のオリジン。null なら手元の扱い（リクエストの Host と比べる。api.md §1）
   appOrigin: string | null;
   metricsToken: string;
+  // ビルド済みの frontend のフォルダ。null なら画面を配らない（architecture.md §4.3）
+  frontendDist?: string | null;
+  // false なら X-Robots-Tag と index.html の meta で noindex にする（docs/decisions/0045）。なければ false
+  publicIndexing?: boolean;
   // 書き込みの回数の制限（api.md §6）。なければ DEFAULT_RATE_LIMITS。性能テストは同じ人で何百回も書くので緩める
   rateLimits?: RateLimits;
   // 写真の 1 人あたりの上限（data.md §3）。なければ DEFAULT_PHOTO_QUOTA。テストは小さくして 429 を確かめる
@@ -107,6 +113,8 @@ export class AppAssembly implements AppFactory {
   readonly #deployed: boolean;
   readonly #appOrigin: string | null;
   readonly #metricsToken: string;
+  readonly #frontendDist: string | null;
+  readonly #publicIndexing: boolean;
   readonly #rateLimits: RateLimits;
   readonly #photoQuota: PhotoQuota;
   readonly #logger: Logger;
@@ -124,6 +132,8 @@ export class AppAssembly implements AppFactory {
     this.#deployed = new AppEnvRules().isDeployed(deps.appEnv);
     this.#appOrigin = deps.appOrigin;
     this.#metricsToken = deps.metricsToken;
+    this.#frontendDist = deps.frontendDist ?? null;
+    this.#publicIndexing = deps.publicIndexing ?? false;
     this.#rateLimits = deps.rateLimits ?? DEFAULT_RATE_LIMITS;
     this.#photoQuota = deps.photoQuota ?? DEFAULT_PHOTO_QUOTA;
     this.#logger = logger;
@@ -144,11 +154,14 @@ export class AppAssembly implements AppFactory {
     return new ExpressApp({
       controllers: [...this.#controllers(user, cookie, accounts), ...this.#extraControllers],
       requestMetrics: new RequestMetricsRecorder(this.#metrics),
+      screenHeaders: new ScreenHeaders(this.#publicIndexing),
       guards: [new ApiNoStore(), new OriginGuard(this.#appOrigin, requests), new JsonContentType(requests)],
       session: new SessionMiddleware(accounts, cookie, user),
       rateLimit: this.#rateLimit(requests, user),
       notFound: new NotFoundHandler(),
+      frontend: this.#frontendDist === null ? null : new FrontendFiles(this.#frontendDist, this.#publicIndexing),
       errorHandler: new ErrorHandler(this.#metrics, this.#logger),
+      trustProxy: this.#deployed,
     });
   }
 

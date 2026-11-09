@@ -84,3 +84,4 @@
 | [0051](0051-photo-storage-details.md) | 写真を Cloud Storage へ移すときの細部（上限の 429 のコード、中身を読んで配る、CI の fake-gcs-server） | 確定 |
 | [0052](0052-pwa-legal-details.md) | PWA とポリシー・規約のページの細部（虹の輪のアイコン、画面の移動は通信を先に、オフラインのトースト、E2E は SW を止める） | 確定（問い合わせ先は R11 で差し替える） |
 | [0053](0053-policy-link-placement.md) | ポリシーへのリンクは、＋の追加ダイアログと設定のシートに置く（提案からの追加には出さない） | 確定 |
+| [0054](0054-container-details.md) | 本番用のコンテナの細部（tsx で実行、FRONTEND_DIST、スモークテストの DB 接続、CI の image ジョブ） | 確定 |

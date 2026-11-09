@@ -56,7 +56,7 @@
 
 ## 5. E2E テスト（Playwright）
 - スマホサイズ（幅 390px）で実行する。backend はテスト用 DB に向けて起動する（backend へのリクエストを `page.route` で差し替えない）
-- `npm run test:e2e` で流す（テスト用 DB のマイグレーション → frontend のビルド → Playwright）。Playwright が backend（8100 番、`backend/.env.test`）を起動し、backend がビルド済みの frontend も配る（本番と同じ形。CSP などのヘッダー〈architecture.md §4.3〉が効いた状態で画面が動くことも確かめる）。普段の開発（8000・5173）と並べて動かせる
+- `npm run test:e2e` で流す（テスト用 DB のマイグレーション → frontend のビルド → Playwright）。Playwright が backend（8100 番、`backend/.env.test`、`FRONTEND_DIST=../frontend/dist`）を起動し、backend がビルド済みの frontend も配る（本番と同じ形。CSP などのヘッダー〈architecture.md §4.3〉が効いた状態で画面が動くことも確かめ、`csp.spec` で違反が 0 件であることを数える）。普段の開発（8000・5173）と並べて動かせる
 - 複数の人は、Playwright のブラウザのコンテキストを分けて作る（Cookie が別になる）
 - Service Worker は設定で止め（`serviceWorkers: 'block'`）、シナリオ 14 の `pwa.spec` だけで許す。キャッシュした画面の殻がほかのテストに混ざらないように（docs/decisions/0052）
 - 各テストの前に、テスト用 DB のマスターデータ以外を空にする（`e2e/support/TestData.ts`）
@@ -88,7 +88,7 @@ push と PR ごとに次を実行する。どれかが失敗したら PR はマ�
 5. 性能の統合テスト（metrics.md §4）
 6. frontend のビルドと JS サイズの計測
 7. E2E テスト（LCP・タップ領域を含む）
-8. 本番用のイメージ（`Dockerfile`）を作り、Postgres のサービスコンテナにつないで起動して、スモークテストをする（`scripts/smoke-image.ts`。metrics.md §2）
+8. 本番用のイメージ（`Dockerfile`）を作り、Postgres のサービスコンテナにつないで起動して、スモークテストをする（`image` ジョブ。`npm run smoke:image -- <イメージ>`〈`scripts/smoke-image.ts`〉。`APP_ENV=production` と `PUBLIC_INDEXING=true` の 2 回起動する。metrics.md §2。docs/decisions/0054）
 9. PR の検査（process.md の「詰まった点と再発防止策」欄、目標値を変えたときの decisions の有無）
 10. 結果をジョブサマリーと `metrics-report.json` に出す
 

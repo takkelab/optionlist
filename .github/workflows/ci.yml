@@ -90,6 +90,52 @@ jobs:
           path: metrics-report.json
           if-no-files-found: warn
 
+  # 本番用のイメージを作り、Postgres のサービスコンテナにつないで起動して確かめる（testing.md §6 の 8、metrics.md §2。docs/decisions/0054）
+  # main に入ったときのデプロイ（R8）は、ここと同じ Dockerfile で作ったイメージを出す
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      ADMIN_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      DATABASE_URL: postgres://ol_migrator:ol_migrator@127.0.0.1:5432/optionlist_test?sslmode=disable
+      # コンテナからは host.docker.internal に向け直してつなぐ（scripts/lib/image-smoke.ts）
+      APP_DATABASE_URL: postgres://ol_app:ol_app@127.0.0.1:5432/optionlist_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install the backend (roles and migrations)
+        run: npm --prefix backend ci
+      - name: Create the roles and migrate the test database
+        run: |
+          {
+            echo "ADMIN_DATABASE_URL=$ADMIN_DATABASE_URL"
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "APP_DATABASE_URL=$APP_DATABASE_URL"
+            echo "IP_HASH_SECRET=ci-ip-hash-secret"
+          } > backend/.env.test
+          npm --prefix backend run db:roles:test
+          npm --prefix backend run db:migrate:test
+      - name: Build the image
+        run: docker build -t optionlist:local .
+      - name: Smoke test the image
+        run: npm run smoke:image -- optionlist:local
+
   pr-check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

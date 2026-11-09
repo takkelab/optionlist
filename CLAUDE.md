@@ -22,13 +22,14 @@
 - Backend テスト: `npm test`、単一ファイル: `npm --prefix backend run test:file -- tests/api/health.test.ts`（backend のフォルダで動く。`npm --prefix backend exec vitest` は今のフォルダで動いて `.env.test` を読めないので禁止。ロールとマイグレーションは流さないので、先に `npm --prefix backend run db:roles:test` と `db:migrate:test`）。マイグレーションテストだけ: `npm --prefix backend run test:migrations`
 - GcsPhotoFiles のテスト（`tests/api/photo-files-contract.test.ts`）: Docker Desktop を起動して `npm --prefix backend run gcs:emulator`（fake-gcs-server。止めるのは `docker stop optionlist-fake-gcs`）。`.env.test` に `GCS_EMULATOR_URL=http://localhost:4443` を書くと GCS の分も流れる（書かなければ手元では飛ばす。書いたのにエミュレーターがなければ落ちる。CI は必ず流す。docs/decisions/0051）
 - frontend の UT: `npm --prefix frontend run test:unit`（`src/lib/` だけ）
-- E2E: `npm run test:e2e`（テスト用 DB をマイグレーションし、frontend をビルドしてから Playwright。設定は `e2e/playwright.config.ts`、依存はルートの package.json。backend 8100・frontend 4174 を自分で起動する。結果は `e2e/results/`）
+- E2E: `npm run test:e2e`（テスト用 DB をマイグレーションし、frontend をビルドしてから Playwright。設定は `e2e/playwright.config.ts`、依存はルートの package.json。backend 8100 を自分で起動し、backend がビルド済みの frontend も配る〈本番と同じ。`FRONTEND_DIST`〉。結果は `e2e/results/`）
+- 本番用のイメージ: Docker Desktop を起動して `docker build -t optionlist:local .` → `npm run smoke:image -- optionlist:local`（`backend/.env.test` のテスト用 DB に `ol_app` でつなぐ。先に `db:roles:test`・`db:migrate:test`。CI の `image` ジョブと同じ。docs/decisions/0054）
 - 性能テスト: `npm run test:perf`（`.env.test` の DB に性能用データを入れ直してから流す。結果は `backend/coverage/perf/results.json`、判定は `metrics:check`）
 - 目標値の判定（CI と同じ）: `npm run metrics:check`。結果は `metrics-report.json`。目標値は `metrics.config.json`
 - 品質チェックスクリプト自体のテスト: `npm run test:scripts`
 - 利用状況（metrics.md §6。達成数・frontend のエラー数など）: `npm run metrics:usage`（`backend/.env` の DB を読むだけ）
 - 手元で `/api/metrics` を見る: `backend/.env` に `METRICS_TOKEN` を書いて起動し、`curl -H "Authorization: Bearer <トークン>" http://localhost:8000/api/metrics`（トークンがない・違うと 404。docs/decisions/0038）
-- PR のマージ: `npm run pr:merge -- <PR 番号>`（CI が緑のときだけマージする。その PR のブランチへ積んだ PR は、マージの前に向き先を付け替える。`gh pr merge` は使わない）
+- PR のマージ: `npm run pr:merge -- <PR 番号>`（CI の `quality`・`pr-check`・`image` が緑のときだけマージする。その PR のブランチへ積んだ PR は、マージの前に向き先を付け替える。`gh pr merge` は使わない）
 
 # Gotchas
 - off-jt の backend も 8000 番を使う。Windows では別アプリが使っていても listen が成功してしまうので、backend は起動時に接続して確かめ、使用中ならメッセージを出して止まる（docs/decisions/0007）

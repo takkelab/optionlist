@@ -10,7 +10,7 @@
   - reviewer サブエージェントが SPEC と照らし合わせて、正しさに関わる指摘がない（AI が納得するまで ready にしない）
   - PR 本文の「詰まった点と再発防止策」が埋まっている（§2。なければ「なし」と書く）
   - 仮決めや目標値を変えたなら、docs/decisions/ に記録がある（§3）
-- マージは `npm run pr:merge -- <PR 番号>` で行う。CI（`quality`・`pr-check`）の最新の結果がすべて緑のときだけマージする。GitHub の画面や `gh pr merge` で直接マージしない（ブランチ保護が使えないため。docs/decisions/0004）
+- マージは `npm run pr:merge -- <PR 番号>` で行う。CI（`quality`・`pr-check`・`image`）の最新の結果がすべて緑のときだけマージする。GitHub の画面や `gh pr merge` で直接マージしない（ブランチ保護が使えないため。docs/decisions/0004）
 - ステップの開始時に、Claude の使用量表示（5 時間枠・週の使用率）を控える。マージ後に同じ値をもう一度控え、metrics.md §7 の値と一緒に `docs/metrics/ai-usage.md` に記録する
 
 ## 2. AI が詰まったときの再発防止
@@ -69,7 +69,7 @@ AI が何かに詰まり、力ずくで解決したときは「解決したか�
 npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   && npm --prefix backend run test:migrations && npm run test:e2e && npm run metrics:check
 ```
-- CI（`quality`・`pr-check`）がすべて緑で、`npm run pr:merge -- <PR 番号>` でマージできること
+- CI（`quality`・`pr-check`・`image`）がすべて緑で、`npm run pr:merge -- <PR 番号>` でマージできること
 - そのステップで変えた仕様の章と docs/decisions/ が、同じ PR で直っていること（§3）
 - CLAUDE.md の Commands・Gotchas が、そのステップのあとのやり方に合っていること
 

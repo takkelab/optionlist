@@ -37,7 +37,8 @@ try {
     ...settings,
     logger,
   }).app();
-  await portGuard.ensureFree(PORT);
+  // PortGuard は手元の Windows のためのもの（docs/decisions/0007）。確認用・本番（Cloud Run）では使わない（architecture.md §4.3）
+  if (!new AppEnvRules().isDeployed(settings.appEnv)) await portGuard.ensureFree(PORT);
   await app.listen(PORT);
   logger.info({ kind: "server_started", message: `server running at: http://localhost:${PORT}` });
 } catch (error) {

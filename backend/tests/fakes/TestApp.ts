@@ -38,6 +38,10 @@ export type TestAppOptions = {
   rateLimits?: RateLimits;
   // 写真の 1 人あたりの上限。既定は本番と同じ（DEFAULT_PHOTO_QUOTA）
   photoQuota?: PhotoQuota;
+  // ビルド済みの frontend のフォルダ。既定は null（画面を配らない）
+  frontendDist?: string | null;
+  // 既定は false（noindex を付ける）
+  publicIndexing?: boolean;
 };
 
 // API テスト用に、server.ts と同じ組み立て（AppAssembly）をする。db を渡さなければ DB を使わない（FakeDatabase）
@@ -61,6 +65,8 @@ export class TestApp implements HttpApp {
       metricsToken: options.metricsToken ?? TEST_METRICS_TOKEN,
       rateLimits: options.rateLimits,
       photoQuota: options.photoQuota,
+      frontendDist: options.frontendDist,
+      publicIndexing: options.publicIndexing,
       logger: this.#logger,
       extraControllers: controllers,
     });

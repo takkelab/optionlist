@@ -12,6 +12,8 @@ export interface HttpApp {
 export type AppDeps = {
   controllers: Controller[];
   requestMetrics: Middleware;
+  // 画面のセキュリティのヘッダーと noindex（architecture.md §4.3）
+  screenHeaders: Middleware;
   // 本文を読む前に通す（Cache-Control・Origin・Content-Type。api.md §1）
   guards: Middleware[];
   // Cookie からそのリクエストの人を決める（api.md §6）
@@ -19,7 +21,11 @@ export type AppDeps = {
   // 書き込みの回数の制限（api.md §6）。人を決めたあとに通す
   rateLimit: Middleware;
   notFound: Middleware;
+  // ビルド済みの frontend の配信。null なら画面を配らない（手元の開発・API テスト）
+  frontend: Middleware | null;
   errorHandler: ErrorMiddleware;
+  // 確認用・本番は Cloud Run の前段（Google のロードバランサー）を 1 段だけ信じ、X-Forwarded-For から IP を取る
+  trustProxy: boolean;
 };
 
 // Express の設定。依存は server.ts（テストではフェイク）が組み立てて渡す。
@@ -27,15 +33,21 @@ export type AppDeps = {
 export class ExpressApp implements HttpApp {
   readonly #controllers: Controller[];
   readonly #requestMetrics: Middleware;
+  readonly #screenHeaders: Middleware;
   readonly #session: Middleware;
   readonly #guards: Middleware[];
   readonly #rateLimit: Middleware;
   readonly #notFound: Middleware;
+  readonly #frontend: Middleware | null;
   readonly #errorHandler: ErrorMiddleware;
+  readonly #trustProxy: boolean;
 
   constructor(deps: AppDeps) {
     this.#controllers = deps.controllers;
     this.#requestMetrics = deps.requestMetrics;
+    this.#screenHeaders = deps.screenHeaders;
+    this.#frontend = deps.frontend;
+    this.#trustProxy = deps.trustProxy;
     this.#session = deps.session;
     this.#guards = deps.guards;
     this.#rateLimit = deps.rateLimit;
@@ -49,13 +61,16 @@ export class ExpressApp implements HttpApp {
     // /api/events/ や /API/options が、パスで判定する Origin の確認・回数の制限をすり抜けてしまう。docs/decisions/0050）
     app.set("strict routing", true);
     app.set("case sensitive routing", true);
+    if (this.#trustProxy) app.set("trust proxy", 1);
     app.use(this.#requestMetrics.handler());
+    app.use(this.#screenHeaders.handler());
     for (const guard of this.#guards) app.use(guard.handler());
     app.use(express.json({ limit: "1mb" }));
     app.use(this.#session.handler());
     app.use(this.#rateLimit.handler());
     this.routes(app);
     app.use("/api", this.#notFound.handler());
+    if (this.#frontend !== null) app.use(this.#frontend.handler());
     app.use(this.#errorHandler.handler());
     return app;
   }
