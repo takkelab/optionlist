@@ -27,7 +27,7 @@ type Case =
   // A が追加した提案を B も追加できる（UNIQUE は人ごと）
   | { kind: "create" }
   // 自分のアカウントだけを扱う（/api/account）。別の人が呼んでも A のアカウント・行・写真が変わらない
-  | { kind: "own-account"; body?: object }
+  | { kind: "own-account"; body?: object; status: number }
   | { kind: "no-user-data"; reason: string };
 
 const CASES: Record<string, Case> = {
@@ -47,11 +47,11 @@ const CASES: Record<string, Case> = {
   "GET /api/photos/:filename": { kind: "others-row", target: "photo" },
   "GET /api/suggestions": { kind: "list" },
   "GET /api/suggestions/:id": { kind: "list" },
-  "GET /api/account": { kind: "own-account" },
-  "POST /api/account/recovery-code": { kind: "own-account" },
+  "GET /api/account": { kind: "own-account", status: 200 },
+  "POST /api/account/recovery-code": { kind: "own-account", status: 201 },
   // A のコードを知らない人は、形の合うコードを入れても 404
-  "POST /api/account/restore": { kind: "own-account", body: { code: "2345-6789-ABCD-EFGH", replace: true } },
-  "DELETE /api/account": { kind: "own-account" },
+  "POST /api/account/restore": { kind: "own-account", body: { code: "2345-6789-ABCD-EFGH", replace: true }, status: 404 },
+  "DELETE /api/account": { kind: "own-account", status: 204 },
 };
 
 const recorder = new RouteRecorder();
@@ -209,7 +209,7 @@ describe("A's account", () => {
       const pending = method === "GET" ? r.get(path) : method === "POST" ? r.post(path) : r.delete(path);
       return found.body === undefined ? pending : pending.send(found.body);
     });
-    expect([200, 201, 204, 404]).toContain(res.status);
+    expect(res.status).toBe(found.status);
     if (method === "GET") expect(res.body).toMatchObject({ hasAccount: true, hasRecoveryCode: false });
     expect(await snapshot()).toEqual(before);
     expect(existsSync(join(uploadDir, aRows.photo))).toBe(true);

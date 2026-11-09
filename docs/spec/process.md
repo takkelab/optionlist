@@ -127,7 +127,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm --prefix backend run test:file -- tests/api/achievement-photos.test.ts tests/api/photo-files-contract.test.ts` が通る（EXIF が残らない、`private`・`Vary: Cookie`・CSP、上限で 429、他人の写真が 404）
 
 ### R6. PWA と、ポリシー・規約のページ（docs/decisions/0032・0039・0045）
-- vite-plugin-pwa（JS・CSS・アイコンだけを先にキャッシュし、`index.html` は通信を先に試す）、manifest とアイコン、`/privacy`・`/terms`、追加ダイアログのポリシーへのリンク（screens.md §2・§10）。noindex は R7 で Express が差し込む（ビルドには入れない）
+- vite-plugin-pwa（JS・CSS・アイコンだけを先にキャッシュし、`index.html` は通信を先に試す）、manifest とアイコン、`/privacy`・`/terms`、追加ダイアログと設定のシートのポリシー・規約へのリンク（screens.md §2・§9・§10。docs/decisions/0049）。noindex は R7 で Express が差し込む（ビルドには入れない）
 - 完了の条件
   - 共通の条件（初期表示の JS サイズが 200KB 以内のまま）
   - `npm --prefix frontend run build` のあと、`test -f frontend/dist/manifest.webmanifest && test -f frontend/dist/sw.js`

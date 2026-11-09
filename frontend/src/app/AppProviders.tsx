@@ -74,7 +74,9 @@ export function AppProviders({ api, suggestions, events, account, children }: Pr
     catalog.forget()
     setVersion((current) => current + 1)
   }, [loader, catalog])
-  const changes = useMemo<AccountChanges>(() => ({ version, changed }), [version, changed])
+  const [issues, setIssues] = useState(0)
+  const issued = useCallback(() => setIssues((current) => current + 1), [])
+  const changes = useMemo<AccountChanges>(() => ({ version, changed, issues, issued }), [version, changed, issues, issued])
 
   return (
     <AccountProviders account={account} memo={memo} changes={changes}>

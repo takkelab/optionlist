@@ -18,6 +18,7 @@ export class FakeAccountStore implements AccountStore, UserStore {
   #restoreResult: RestoreResult = { status: "not_found" };
   #nextId = 1;
   #rateLimited = false;
+  #removeFails = false;
 
   async findBySession(sessionHash: Buffer): Promise<FoundUser | null> {
     return this.#users.get(sessionHash.toString("hex")) ?? null;
@@ -54,6 +55,7 @@ export class FakeAccountStore implements AccountStore, UserStore {
   }
 
   async remove(userId: number): Promise<string[]> {
+    if (this.#removeFails) throw new Error("消せなかった");
     this.#removed.push(userId);
     this.#rows.delete(userId);
     return this.#photos.get(userId) ?? [];
@@ -77,6 +79,11 @@ export class FakeAccountStore implements AccountStore, UserStore {
 
   rateLimit(): void {
     this.#rateLimited = true;
+  }
+
+  // remove を DB のエラーで失敗させる
+  failRemoving(): void {
+    this.#removeFails = true;
   }
 
   // create に渡された IP のハッシュ（16 進。呼ばれた順）

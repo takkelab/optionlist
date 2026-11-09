@@ -15,7 +15,8 @@
 ## 1. マイグレーションのテスト（Vitest）
 - テスト用 DB とは別の DB（`optionlist_test_migrations`）を作り直しながら行う。`npm --prefix backend run test:migrations` で単独でも流せ、失敗したケース数が metrics.md §2 の指標になる
 - 空の DB に対して、全マイグレーションの up → down → up が通ること
-- マイグレーションを 1 本ずつ up / down し、各段階で down が up の変更を元に戻すこと（テーブル・列・インデックスの一覧を比べる）
+- マイグレーションを 1 本ずつ up / down し、各段階で down が up の変更を元に戻すこと（テーブル・列・インデックス・関数の一覧を比べる。関数だけを足すマイグレーションでも差が見えるように）
+- どのマイグレーションの版（ファイル名の先頭の日時。UTC）も、未来の日時でないこと（未来の版があると、`db:new` が付ける今の時刻の版がその前に並ぶ。docs/harness/incidents.md #21）
 - up 後のテーブル・列・インデックス・外部キーが期待どおりであること
 - マスターデータ（提案とテーマ・タグ。data.md §2）が入っていること。どの提案にもタグが 2〜4 個付き、どのタグも 3 件以上の提案に付いていること。どの月にも季節の提案が 5 件以上あること。季節の CHECK 制約が効くこと。基準のマイグレーションのマスターデータが、MySQL 時代の最後の状態（`backend/tests/migrations/fixtures/suggestions-mysql-final.json`）と ID・中身まで一致すること（docs/decisions/0044）
 - RLS・ロール・認証の関数が data.md §4 のとおりであること（詳しくは §7）
@@ -106,3 +107,4 @@ main に入ったときだけ、別のワークフロー（`.github/workflows/de
    - B の Cookie で一覧系（`GET /api/options`・`GET /api/suggestions` の `optionStatus`・`GET /api/suggestions/:id` の `optionId`）を呼んで、A の id と状態が 1 つも出ないこと
    - `PUT /api/options/order` に A の id を混ぜると 400 になり、A の並びが変わらないこと
    - Cookie なしで、`:id` を取るすべてのルートが 404 になり、一覧が空であること
+   - 自分のアカウントだけを扱うルート（`/api/account` の 4 つ）を、その回だけの別の人の Cookie で呼んで、A の users の行（鍵・復旧コードのハッシュ）・項目・達成・写真が変わらないこと（A のコードを知らない人の `restore` は 404）

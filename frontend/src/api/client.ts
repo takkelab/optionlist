@@ -165,7 +165,8 @@ export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi, Acc
       return { kind: 'restored', account: res.data }
     } catch (error) {
       const status = this.#statusOf(error)
-      if (status === 404) return { kind: 'wrong' }
+      // 400 は形が違う（使えない 0・O・1・I・L を打った）コード。利用者には合わないコードと同じに見せる
+      if (status === 404 || status === 400) return { kind: 'wrong' }
       if (status === 429) return { kind: 'limited' }
       if (status !== 409 || !isAxiosError<RestoreConflict>(error)) throw error
       const { response } = error

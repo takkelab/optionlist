@@ -4,7 +4,7 @@ import type { UserStore } from "../repositories/UserRepository";
 import type { Hasher } from "./AccountHasher";
 import type { SessionKeySource, StartedAccount } from "./AccountService";
 import { AppError } from "./errors";
-import type { PhotoRemover } from "./PhotoCleanup";
+import type { FailureLog, PhotoRemover } from "./PhotoCleanup";
 import type { RecoveryCodeSource } from "./RecoveryCodes";
 
 export type RestoreInput = { code: string; replace: boolean };
@@ -27,6 +27,7 @@ export type AccountSettingsDeps = {
   keys: SessionKeySource;
   codes: RecoveryCodeSource;
   hasher: Hasher;
+  log: FailureLog;
 };
 
 const NO_ACCOUNT: AccountStatus = { hasAccount: false, hasRecoveryCode: false, createdAt: null };
@@ -38,8 +39,10 @@ export class AccountSettingsService implements AccountUseCases {
   readonly #keys: SessionKeySource;
   readonly #codes: RecoveryCodeSource;
   readonly #hasher: Hasher;
+  readonly #log: FailureLog;
 
   constructor(deps: AccountSettingsDeps) {
+    this.#log = deps.log;
     this.#accounts = deps.accounts;
     this.#users = deps.users;
     this.#photos = deps.photos;
@@ -87,8 +90,19 @@ export class AccountSettingsService implements AccountUseCases {
         localItemCount: result.localItemCount,
       });
     }
-    if (userId !== null && userId !== result.userId) await this.removeAll(userId);
+    if (userId !== null && userId !== result.userId) await this.#removeOld(userId);
     return { userId: result.userId, sessionKey };
+  }
+
+  // auth_restore はもう確定していて、移った先の鍵は置き換わっている。ここで投げると新しい鍵の Cookie が返らず、
+  // 移った先のアカウントがどの端末からも開けなくなるので、古いアカウントを消せなくても成功にしてログに残す（docs/decisions/0049）。
+  // 残った古いアカウントは、誰も開けない（鍵を持つ端末がない）まま、削除のジョブ（data.md §5）が保存期間で消す
+  async #removeOld(userId: number): Promise<void> {
+    try {
+      await this.removeAll(userId);
+    } catch (error) {
+      this.#log.error(`引き継ぐ前のアカウント ${userId} を消せなかった`, error);
+    }
   }
 
   // 行を消してからファイルを消す（ファイルを消せなくても成功のまま。PhotoCleanup。data.md §5）

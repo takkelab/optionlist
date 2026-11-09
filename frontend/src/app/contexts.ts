@@ -29,6 +29,9 @@ export interface AccountChanges {
   version: number
   // 覚えている一覧・提案を捨てて、version を進める
   changed(): void
+  // 復旧コードを発行した回数。勧めるカード（やりたいリスト）が、設定のシートで発行されたことを知って消えるため
+  issues: number
+  issued(): void
 }
 
 export const AccountApiContext = createContext<AccountApi | null>(null)

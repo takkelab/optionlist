@@ -32,7 +32,7 @@
 - off-jt の backend も 8000 番を使う。Windows では別アプリが使っていても listen が成功してしまうので、backend は起動時に接続して確かめ、使用中ならメッセージを出して止まる（docs/decisions/0007）
 - TypeScript は 7 系（ネイティブ版）。古い記事の tsconfig オプションがそのまま使えないことがある
 - 開発環境は Windows。シェルコマンドは Git Bash / PowerShell どちらでも動く書き方にする
-- winget で入れた PostgreSQL は bin（`C:\Program Files\PostgreSQL\17\bin`）が PATH に入らない。`db:migrate` の `schema.sql` の書き出しは pg_dump を使うので、PATH に足して VS Code を再起動する。Claude のサンドボックスの中では dbmate がリポジトリに書けない（Access is denied）ので、`--schema-file` で一時フォルダに書き出してからコピーする
+- winget で入れた PostgreSQL は bin（`C:\Program Files\PostgreSQL\17\bin`）が PATH に入らない。`db:migrate` の `schema.sql` の書き出しは pg_dump を使うので、PATH に足して VS Code を再起動する。Claude のサンドボックスの中では dbmate がリポジトリに書けない（Access is denied）ので、`--schema-file` で一時フォルダに書き出してからコピーする。`db:new` も書けないので、そのときは今の UTC の時刻を版にしたファイルを Write ツールで作る（未来の時刻の版はマイグレーションのテストが止める。docs/harness/incidents.md #21）
 - reviewer サブエージェントが「not found」で呼べない実行環境がある（`.claude/agents/` を読み込まない）。そのときは `.claude/agents/reviewer.md` の本文をそのまま汎用のエージェントに渡し、読むだけにさせる（docs/harness/incidents.md #20）
 - 利用者の表（users・options・achievements）は RLS で守っている（data.md §4）。psql やテストで中身を見るときは `DATABASE_URL`（ol_migrator。全員の行が見える）で接続する。`APP_DATABASE_URL`（ol_app）や superuser 以外のロールで見ると、`app.user_id` を設定しない限り 0 行に見える。superuser の postgres は RLS を素通りするので、アプリとしてのテストには使わない（testing.md §0）
 - 手元の PostgreSQL のサーバーの TimeZone は Asia/Tokyo。backend とテストは接続ごとに UTC にしている（`PgPoolFactory`）ので、psql で直接見た日時は 9 時間ずれて見える

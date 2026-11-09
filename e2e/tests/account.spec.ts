@@ -43,6 +43,18 @@ test('A の復旧コードを B が入れると、B に A の一覧が出て、A
   expect(await aList.titles()).toEqual([])
 })
 
+test('やりたいことが 5 件になると勧めるカードが出て、設定のシートでコードを控えると消える', async ({ page }) => {
+  const list = new WishListScreen(page)
+  await list.open()
+  for (let i = 1; i <= 5; i++) await list.add(`やりたいこと ${i}`)
+  const card = page.getByRole('region', { name: '復旧コードを控える' })
+  await expect(card).toBeVisible()
+  await new AccountScreen(page).showRecoveryCode()
+  await expect(card).toBeHidden()
+  await list.open()
+  await expect(card).toBeHidden()
+})
+
 test('すべてのデータを消すと、一覧が空になり、読み直しても空のまま', async ({ page }) => {
   const list = new WishListScreen(page)
   await list.open()

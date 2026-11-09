@@ -142,6 +142,7 @@ export class AppAssembly implements AppFactory {
       keys: this.#keys,
       codes: new RecoveryCodes(new CryptoRandomIndex()),
       hasher: new AccountHasher(this.#ipHashSecret),
+      log: this.#logger,
     });
   }
 }

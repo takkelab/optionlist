@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useAccountApi, useAccountMemo, useNotifier } from '../../app/hooks'
+import { useAccountApi, useAccountChanges, useAccountMemo, useNotifier } from '../../app/hooks'
 
 export type RecoveryCodeIssue = {
   // 表示している復旧コード。null なら閉じている
@@ -14,6 +14,7 @@ export type RecoveryCodeIssue = {
 export function useRecoveryCode(): RecoveryCodeIssue {
   const api = useAccountApi()
   const memo = useAccountMemo()
+  const changes = useAccountChanges()
   const notifier = useNotifier()
   const [code, setCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -21,8 +22,10 @@ export function useRecoveryCode(): RecoveryCodeIssue {
     setBusy(true)
     try {
       setCode(await api.issueRecoveryCode())
-      // 新しいコードを控えたので、シートの印を外す
+      // 新しいコードを控えたので、シートの印を外し、勧めるカードも二度と出さない（screens.md §9）
       memo.setNeedsNewCode(false)
+      memo.answerPrompt()
+      changes.issued()
       return true
     } catch (error) {
       notifier.error('復旧コードを作れませんでした', error)
@@ -30,7 +33,7 @@ export function useRecoveryCode(): RecoveryCodeIssue {
     } finally {
       setBusy(false)
     }
-  }, [api, memo, notifier])
+  }, [api, memo, changes, notifier])
   const close = useCallback(() => setCode(null), [])
   return { code, issue, busy, close }
 }

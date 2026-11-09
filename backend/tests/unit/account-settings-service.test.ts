@@ -21,6 +21,7 @@ describe("AccountSettingsService", () => {
   let store: FakeAccountStore;
   let files: FakePhotoFiles;
   let metrics: PromMetrics;
+  let logger: FakeLogger;
   let service: AccountSettingsService;
   const sha256 = (value: string): string => {
     const hash = createHash("sha256");
@@ -35,6 +36,7 @@ describe("AccountSettingsService", () => {
 
   beforeEach(() => {
     store = new FakeAccountStore();
+    logger = new FakeLogger();
     files = new FakePhotoFiles();
     metrics = new PromMetrics();
     service = new AccountSettingsService({
@@ -44,6 +46,7 @@ describe("AccountSettingsService", () => {
       keys: new FixedSessionKeys([KEY]),
       codes: new RecoveryCodes(new SequenceRandom([8, 9, 10, 11])),
       hasher: new AccountHasher(SECRET),
+      log: logger,
     });
   });
 
@@ -108,6 +111,15 @@ describe("AccountSettingsService", () => {
       store.answerRestore({ status: "ok", userId: 5 });
       await service.restore(3, "ip", { code: CODE, replace: true });
       expect([store.removed(), files.names()]).toEqual([[3], []]);
+    });
+
+    // 移った先の鍵はもう置き換わっているので、古いアカウントを消せなくても新しい鍵を返す（返さないと誰も開けなくなる）
+    it("still returns the new key and logs the error when the other account cannot be removed", async () => {
+      store.giveRow(3, { createdAt: new Date(CREATED), hasRecoveryCode: false });
+      store.answerRestore({ status: "ok", userId: 5 });
+      store.failRemoving();
+      expect(await service.restore(3, "ip", { code: CODE, replace: true })).toEqual({ userId: 5, sessionKey: KEY });
+      expect(logger.errors()).toHaveLength(1);
     });
 
     it("removes nothing when the code is of the account on this device", async () => {

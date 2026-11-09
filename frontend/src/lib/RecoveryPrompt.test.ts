@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { RecoveryPrompt } from './RecoveryPrompt'
 import type { PromptState } from './RecoveryPrompt'
 
-const BASE: PromptState = { pendingCount: 0, photoSaved: false, answered: false, hasRecoveryCode: false, sheetOpen: false }
+const BASE: PromptState = {
+  pendingCount: 0,
+  photoSaved: false,
+  answered: false,
+  account: { hasAccount: true, hasRecoveryCode: false },
+  sheetOpen: false,
+}
 
 describe('RecoveryPrompt', () => {
   const prompt = new RecoveryPrompt()
@@ -12,9 +18,11 @@ describe('RecoveryPrompt', () => {
     ['4 items', { pendingCount: 4 }, false],
     ['5 items', { pendingCount: 5 }, true],
     ['the first photo', { photoSaved: true }, true],
-    ['an answered prompt', { pendingCount: 5, answered: true }, false],
-    ['an issued code', { pendingCount: 5, hasRecoveryCode: true }, false],
-    ['an unknown account status', { pendingCount: 5, hasRecoveryCode: null }, false],
+    ['an answered prompt or a code issued anywhere', { pendingCount: 5, answered: true }, false],
+    ['an issued code', { pendingCount: 5, account: { hasAccount: true, hasRecoveryCode: true } }, false],
+    // すべて消した・前の端末で引き継がれたあと。端末に「写真を保存した」が残っていても出さない（発行は 404 になる）
+    ['no account', { photoSaved: true, account: { hasAccount: false, hasRecoveryCode: false } }, false],
+    ['an unknown account status', { pendingCount: 5, account: null }, false],
     ['an open sheet', { photoSaved: true, sheetOpen: true }, false],
   ])('shows the card after %s: %s', (_case, state, expected) => {
     expect(prompt.shows({ ...BASE, ...state })).toBe(expected)

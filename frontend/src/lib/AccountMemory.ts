@@ -5,11 +5,13 @@ export interface KeyValueStore {
   remove(key: string): void
 }
 
+// 読めない・書けないときは、画面は止めずに console.warn に出す（握り潰さない。覚えられないと、勧めるカードがもう一度出るだけ）
 export class BrowserStore implements KeyValueStore {
   get(key: string): string | null {
     try {
       return localStorage.getItem(key)
-    } catch {
+    } catch (error) {
+      console.warn(`端末に覚えた値（${key}）を読めませんでした`, error)
       return null
     }
   }
@@ -17,16 +19,16 @@ export class BrowserStore implements KeyValueStore {
   set(key: string, value: string): void {
     try {
       localStorage.setItem(key, value)
-    } catch {
-      // 覚えられなくても画面は動く（勧めるカードがもう一度出るだけ）
+    } catch (error) {
+      console.warn(`端末に値（${key}）を覚えられませんでした`, error)
     }
   }
 
   remove(key: string): void {
     try {
       localStorage.removeItem(key)
-    } catch {
-      // 同上
+    } catch (error) {
+      console.warn(`端末に覚えた値（${key}）を消せませんでした`, error)
     }
   }
 }
