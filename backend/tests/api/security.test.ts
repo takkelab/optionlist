@@ -247,6 +247,25 @@ describe("write rate limits (api.md §6)", () => {
     expect(again.status).toBe(202);
   });
 
+  it("issues the session cookie as __Host-ol_session with Secure when deployed (architecture.md §4.3、api.md §6)", async () => {
+    const deployed = new TestRequests(new TestApp({ db, appEnv: "production" }).build());
+    const { status, headers } = await deployed.write("post", "/api/options").send({ title: "a" });
+    expect(status).toBe(201);
+    expect(headers).toMatchObject({
+      "set-cookie": [expect.stringMatching(/^__Host-ol_session=[^;]+;.*Path=\/;.*HttpOnly;.*Secure;.*SameSite=Lax/)],
+    });
+  });
+
+  it("takes the IP from the last X-Forwarded-For hop when deployed (trust proxy 1. architecture.md §4.3)", async () => {
+    const rateLimits = { events: { limit: 1, windowMs: MINUTE_MS }, writes: { limit: 1000, windowMs: MINUTE_MS }, photos: { limit: 1000, windowMs: MINUTE_MS } };
+    const deployed = new TestRequests(new TestApp({ db, clock: new FixedClock(NOW), rateLimits, appEnv: "production" }).build());
+    const send = (forwarded: string) => deployed.write("post", "/api/events", { "X-Forwarded-For": forwarded }).send(EVENTS);
+    expect((await send("203.0.113.1")).status).toBe(202);
+    // 利用者が書いた手前の値は信じない（Google のロードバランサーが最後に足したものを使う）
+    expect((await send("198.51.100.9, 203.0.113.1")).status).toBe(429);
+    expect((await send("203.0.113.2")).status).toBe(202);
+  });
+
   it("counts photo uploads as writes but not restore (counted in the database) or writes without an account", async () => {
     const clock = new FixedClock(NOW);
     const rateLimits = { events: { limit: 1000, windowMs: MINUTE_MS }, writes: { limit: 2, windowMs: MINUTE_MS }, photos: { limit: 1000, windowMs: MINUTE_MS } };

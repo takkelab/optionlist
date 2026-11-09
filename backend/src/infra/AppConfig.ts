@@ -10,6 +10,10 @@ export type AppSettings = {
   ipHashSecret: string;
   // 写真の Cloud Storage の入れ物の名前。null なら UPLOAD_DIR のフォルダに置く（手元・CI。api.md §5）
   photoBucket: string | null;
+  // ビルド済みの frontend のフォルダ（architecture.md §4.3）。null なら画面を配らない（手元の npm run dev は Vite が配る）
+  frontendDist: string | null;
+  // 検索エンジンに載せてよいか（PUBLIC_INDEXING=true のときだけ。docs/decisions/0045）。false なら noindex を付ける
+  publicIndexing: boolean;
 };
 
 export interface AppConfigSource {
@@ -54,8 +58,15 @@ export class EnvAppConfig implements AppConfigSource {
       appOrigin: origin === "" ? null : this.#origin(origin),
       metricsToken: this.#value("METRICS_TOKEN"),
       ipHashSecret: this.#value("IP_HASH_SECRET"),
-      photoBucket: this.#value("PHOTO_BUCKET") === "" ? null : this.#value("PHOTO_BUCKET"),
+      photoBucket: this.#optional("PHOTO_BUCKET"),
+      frontendDist: this.#optional("FRONTEND_DIST"),
+      publicIndexing: this.#value("PUBLIC_INDEXING") === "true",
     };
+  }
+
+  #optional(name: string): string | null {
+    const value = this.#value(name);
+    return value === "" ? null : value;
   }
 
   #appEnv(): AppEnv {

@@ -12,6 +12,8 @@ describe("EnvAppConfig", () => {
       metricsToken: "",
       ipHashSecret: "s",
       photoBucket: null,
+      frontendDist: null,
+      publicIndexing: false,
     });
   });
 
@@ -22,6 +24,8 @@ describe("EnvAppConfig", () => {
       metricsToken: "t",
       ipHashSecret: "s",
       photoBucket: "photos",
+      frontendDist: null,
+      publicIndexing: false,
     });
   });
 
@@ -36,6 +40,12 @@ describe("EnvAppConfig", () => {
       expect(() => new EnvAppConfig({ APP_ORIGIN: origin }, new AppEnvRules()).read()).toThrow("APP_ORIGIN");
     },
   );
+
+  it("reads FRONTEND_DIST and turns indexing on only for PUBLIC_INDEXING=true", () => {
+    const read = (value: string) => new EnvAppConfig({ FRONTEND_DIST: "/app/frontend/dist", PUBLIC_INDEXING: value }, new AppEnvRules()).read();
+    expect(read("true")).toMatchObject({ frontendDist: "/app/frontend/dist", publicIndexing: true });
+    for (const value of ["TRUE", "1", ""]) expect(read(value)).toMatchObject({ publicIndexing: false });
+  });
 
   it("rejects an unknown APP_ENV", () => {
     expect(() => new EnvAppConfig({ APP_ENV: "prod" }, new AppEnvRules()).read()).toThrow("APP_ENV");

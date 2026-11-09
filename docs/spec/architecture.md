@@ -155,6 +155,8 @@ optionlist-web/
 | `PHOTO_BUCKET` | 写真の入れ物の名前（なければ `UPLOAD_DIR` の `LocalPhotoFiles`） | Cloud Run の環境変数 |
 | `METRICS_TOKEN` | `/api/metrics` のトークン | Secret Manager |
 | `IP_HASH_SECRET` | IP を HMAC する秘密の値（api.md §6） | Secret Manager |
+| `PUBLIC_INDEXING` | `true` のときだけ検索エンジンに載せる（§4.3。なければ noindex） | Cloud Run の環境変数（R11 で `true`） |
+| `FRONTEND_DIST` | ビルド済みの frontend のフォルダ。なければ画面を配らない（手元の `npm run dev`・API テスト） | イメージに入れてある（`/app/frontend/dist`。E2E は `../frontend/dist`） |
 
 - 秘密の値は、リポジトリ・GitHub の変数・ログに置かない。手元は `backend/.env`（git に入れない）
 - `APP_ENV` が `staging` か `production` で、`APP_ORIGIN`・`METRICS_TOKEN`・`IP_HASH_SECRET`・`PHOTO_BUCKET` のどれかがなければ、backend は起動の時点で止まる（`infra/AppConfig.ts`。docs/decisions/0050・0051）。手元は `APP_ENV` を書かなければ `development`、`APP_ORIGIN` を書かなければ Host と比べる（api.md §1）。`METRICS_TOKEN` を書かなければ `/api/metrics` はいつも 404
@@ -163,7 +165,8 @@ optionlist-web/
 
 ### 4.3 本番での振る舞い
 - `APP_ENV` が `staging` か `production` なら、PortGuard（docs/decisions/0007）を使わず、`trust proxy` を 1 にし、Cookie に `Secure` を付ける
-- Express がビルド済みの frontend（`frontend/dist`）も配る。`/api` 以外で、ファイルに当たらないパスは `index.html` を返す（画面のルーティング）。名前にハッシュが付いたファイルは `Cache-Control: public, max-age=31536000, immutable`、`index.html` と Service Worker は `no-cache`
-- 画面の応答に付けるヘッダー（docs/decisions/0038）: `Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`、`Strict-Transport-Security: max-age=31536000`、`Referrer-Policy: same-origin`、`X-Content-Type-Options: nosniff`、`Permissions-Policy: camera=(), microphone=(), geolocation=()`。外のスクリプト・フォント・計測タグは読まない
+- Express がビルド済みの frontend（`frontend/dist`）も配る。`/api` 以外で、ファイルに当たらない GET・HEAD は `index.html` を返す（画面のルーティング）。ただし `/assets/` の下でファイルがなければ 404（古い版のタブが消えたチャンクを読みに来たときに、HTML を JS として渡さない）。名前にハッシュが付いたファイル（`/assets/` の下）は `Cache-Control: public, max-age=31536000, immutable`、`index.html`・Service Worker・そのほかのファイルは `no-cache`（docs/decisions/0054）
+- イメージ（`Dockerfile`）の中の backend は、ビルドせず tsx で TypeScript のまま動かす（`node --import tsx src/server.ts`。docs/decisions/0054）
+- 画面の応答（`/api/` 以外）に付けるヘッダー（docs/decisions/0038）: `Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`、`Strict-Transport-Security: max-age=31536000`、`Referrer-Policy: same-origin`、`X-Content-Type-Options: nosniff`、`Permissions-Policy: camera=(), microphone=(), geolocation=()`。外のスクリプト・フォント・計測タグは読まない
 - 公開の段階（docs/decisions/0045）の 2 段目が終わるまでは（3 段目の一般公開で外す）、検索エンジンに載せない。`PUBLIC_INDEXING` が `true` でなければ、すべての応答に `X-Robots-Tag: noindex` を付け、Express が `index.html` を返すときに `<meta name="robots" content="noindex">` を `<head>` に差し込む。ビルドした `index.html` には meta を入れない（確認用と本番は同じイメージを出すので、ビルドに入れると実行時に外せない）。`PUBLIC_INDEXING=true` にすると、どちらも付けない
 - ログは 1 行 1 つの JSON（`severity`・`message`・`kind`・`route`・`status`・`durationMs`）で標準出力に出す。Cookie・復旧コード・タイトル・写真の名前は出さない（docs/decisions/0042）
