@@ -293,3 +293,37 @@ describe("master data after all migrations", () => {
     expect(row?.n).toBeGreaterThanOrEqual(5);
   });
 });
+
+// 手元の DB にすでにある写真の行は、大きさがわからないので 0 で埋める（docs/decisions/0051）
+describe("photo_bytes migration on existing rows", () => {
+  const target = files.find((f) => f.endsWith("_photo_bytes.sql"));
+  if (target === undefined) throw new Error("photo_bytes のマイグレーションが見つからない");
+  const dir = mkdtempSync(join(tmpdir(), "optionlist-photo-bytes-"));
+  const partial = new DbmateCli(url.toString(), dir);
+
+  beforeAll(async () => {
+    await all.drop();
+    for (const f of files.filter((f) => f < target)) copyFileSync(join(MIGRATIONS_DIR, f), join(dir, f));
+    await partial.up();
+    await sql.rows(
+      `WITH u AS (INSERT INTO users (session_hash, created_at, last_seen_at) VALUES ('\\x02', now(), now()) RETURNING id),
+            o AS (INSERT INTO options (user_id, title, sort_order, created_at, updated_at) SELECT id, 't', 0, now(), now() FROM u RETURNING id, user_id)
+       INSERT INTO achievements (option_id, user_id, achieved_at, photo_filename)
+       SELECT id, user_id, now(), 'old.jpg' FROM o UNION ALL SELECT id, user_id, now(), NULL FROM o`,
+    );
+    copyFileSync(join(MIGRATIONS_DIR, target), join(dir, target));
+    await partial.up();
+  }, HOOK_TIMEOUT_MS);
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("sets 0 for rows with a photo and leaves rows without a photo NULL", async () => {
+    const rows = await sql.rows("SELECT photo_filename, photo_bytes FROM achievements ORDER BY photo_filename NULLS LAST");
+    expect(rows).toEqual([
+      { photo_filename: "old.jpg", photo_bytes: 0 },
+      { photo_filename: null, photo_bytes: null },
+    ]);
+  });
+});
