@@ -138,10 +138,10 @@ optionlist-web/
 
 - 地域はすべて `asia-northeast1`（東京）。API と DB を同じ地域に置く
 - 確認用と本番は、同じイメージ（同じダイジェスト）を出す。イメージは main に入ったときに 1 回だけ作り、Artifact Registry に置く
-- GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）。本番のデプロイ用のサービスアカウントは、このリポジトリの `deploy.yml` を main から `workflow_dispatch` で起動したときにしか使えない条件にする（docs/decisions/0055）
+- GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）。デプロイ用のサービスアカウントは、`repository_id`・`repository_owner_id`・`workflow_ref`（`deploy.yml` の main）と `event_name` で縛り、確認用は `push`、本番は `workflow_dispatch` のときにしか使えないようにする。本番には、確認用の Cloud Run が今動かしているイメージをダイジェストで出す。`GITHUB_TOKEN` の既定の権限は読み取りだけにし、どのワークフローにも `actions: write` を与えない（docs/decisions/0055）
 - 出す前に、Cloud Run Job（`optionlist-<env>-migrate`）で `ol_migrator` としてマイグレーションを流す。失敗したら、新しいイメージは出さない
 - Cloud Run のサービスアカウントは環境ごとに分け、自分の環境の入れ物・秘密の値・Cloud SQL の接続だけを許す
-- 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、ロールに BYPASSRLS がないこと、予算のアラート）
+- 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、デプロイ用のサービスアカウントの Workload Identity Federation の条件、ロールに BYPASSRLS がないこと、予算のアラート）。`staging`・`production` では、`GITHUB_TOKEN` の既定の権限が `read` で、`.github/workflows/` に `actions: write` がないことも確かめる（docs/decisions/0055）
 
 ### 4.2 環境変数と秘密の値
 | 名前 | 内容 | 置き場所（確認用・本番） |
