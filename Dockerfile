@@ -23,8 +23,13 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080 \
     FRONTEND_DIST=/app/frontend/dist
+# マイグレーションの Cloud Run Job（optionlist-<env>-migrate）も同じイメージで動かす（docs/decisions/0057）
+# コマンド: dbmate --no-dump-schema --migrations-dir db/migrations migrate（migrate は DB を作らない。DATABASE_URL は Secret Manager から）
+# 版は backend/package-lock.json の dbmate と同じにする
+COPY --from=ghcr.io/amacneil/dbmate:2.37.0 /usr/local/bin/dbmate /usr/local/bin/dbmate
 COPY --from=backend-deps /app/backend/node_modules backend/node_modules
 COPY backend/package.json backend/tsconfig.json backend/
+COPY backend/db/migrations backend/db/migrations
 COPY backend/src backend/src
 COPY shared shared
 COPY --from=frontend /app/frontend/dist frontend/dist

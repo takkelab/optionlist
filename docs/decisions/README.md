@@ -86,3 +86,5 @@
 | [0053](0053-policy-link-placement.md) | ポリシーへのリンクは、＋の追加ダイアログと設定のシートに置く（提案からの追加には出さない） | 確定 |
 | [0054](0054-container-details.md) | 本番用のコンテナの細部（tsx で実行、FRONTEND_DIST、スモークテストの DB 接続、CI の image ジョブ） | 確定 |
 | [0055](0055-production-deploy-by-dispatch.md) | 本番へは、GitHub の承認ではなく、自分で手で起動するワークフローで出す | 確定 |
+| [0056](0056-env-login-roles.md) | 共用の Cloud SQL では、環境ごとのログイン用のロールを作り、ol_* はグループのロールにする | 確定 |
+| [0057](0057-environment-details.md) | 確認用・本番の環境の細部（独自ドメインは R11 で、マイグレーションの Job、ログの置き場所、infra のスクリプト） | 確定 |

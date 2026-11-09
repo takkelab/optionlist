@@ -8,6 +8,7 @@
     "start": "tsx --env-file=.env --max-semi-space-size=4 src/server.ts",
     "db:roles": "tsx --env-file=.env db/roles/setup-roles.ts",
     "db:roles:test": "tsx --env-file=.env.test db/roles/setup-roles.ts --test --recreate",
+    "db:roles:cloud": "tsx db/roles/setup-roles.ts --cloud",
     "db:migrate": "dbmate up",
     "db:migrate:test": "dbmate --env-file .env.test --no-dump-schema up",
     "db:new": "dbmate new",

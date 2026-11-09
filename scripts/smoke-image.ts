@@ -7,8 +7,8 @@ import { ContainerDatabaseUrl, FetchHttpGetter, ImageSmokeChecks } from "./lib/i
 
 const image = process.argv[2];
 const appDatabaseUrl = process.env.APP_DATABASE_URL ?? "";
-if (image === undefined || appDatabaseUrl === "") {
-  console.error("使い方: npm run smoke:image -- <イメージ>（APP_DATABASE_URL が要る。手元は backend/.env.test から読む）");
+if (image === undefined || appDatabaseUrl === "" || (process.env.DATABASE_URL ?? "") === "") {
+  console.error("使い方: npm run smoke:image -- <イメージ>（APP_DATABASE_URL・DATABASE_URL が要る。手元は backend/.env.test から読む）");
   process.exit(1);
 }
 
@@ -79,6 +79,21 @@ const runOnce = async (label: string, extraEnv: string[], check: (checks: ImageS
   }
 };
 
+// マイグレーションの Cloud Run Job と同じコマンドを、イメージの中の dbmate で流す（docs/decisions/0057）
+// テスト用 DB は最新までマイグレーション済みなので、何もせずに成功する。版とマイグレーションのファイルがイメージに入っていることを確かめる
+const migrateOnce = (): boolean => {
+  const migratorUrl = process.env.DATABASE_URL ?? "";
+  const run = docker([
+    "run", "--rm", "--add-host=host.docker.internal:host-gateway",
+    "-e", `DATABASE_URL=${new ContainerDatabaseUrl().rewrite(migratorUrl)}`,
+    image, "dbmate", "--no-dump-schema", "--migrations-dir", "db/migrations", "migrate",
+  ]);
+  if (run.status === 0) console.log("✅ dbmate migrate（マイグレーションの Job のコマンド）");
+  else console.error(`❌ dbmate migrate が終了コード ${run.status} で終わった\n${run.stdout}${run.stderr}`);
+  return run.status === 0;
+};
+
+const migrated = migrateOnce();
 const hidden = await runOnce("PUBLIC_INDEXING なし", [], (checks) => checks.hidden());
 const indexed = await runOnce("PUBLIC_INDEXING=true", ["PUBLIC_INDEXING=true"], (checks) => checks.indexed());
-process.exit(hidden && indexed ? 0 : 1);
+process.exit(migrated && hidden && indexed ? 0 : 1);

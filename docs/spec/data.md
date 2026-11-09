@@ -149,7 +149,7 @@
 
 | ロール | ログイン | 使うところ | 権限 | 利用者の表（users・options・achievements）のポリシー |
 |--------|----------|------------|------|------|
-| `ol_migrator` | する | dbmate（マイグレーション）、テストの後始末、性能用データの投入、週 1 の書き出し、復旧の訓練の数え上げ | 表・ビュー・関数の持ち主。手元と CI では CREATEDB も持つ（マイグレーションのテストが DB を作り直す。確認用・本番は R8 で決める。docs/decisions/0048） | `USING (true) WITH CHECK (true)` |
+| `ol_migrator` | する | dbmate（マイグレーション）、テストの後始末、性能用データの投入、週 1 の書き出し、復旧の訓練の数え上げ | 表・ビュー・関数の持ち主。手元と CI では CREATEDB も持つ（マイグレーションのテストが DB を作り直す。docs/decisions/0048）。確認用・本番では持たない（docs/decisions/0057） | `USING (true) WITH CHECK (true)` |
 | `ol_app` | する | アプリ（Cloud Run のサービス） | users・options・achievements の SELECT / INSERT / UPDATE / DELETE、マスターデータの SELECT、events の INSERT、§4 の認証の関数の EXECUTE。表の持ち主ではない | 自分の行だけ（下の RLS） |
 | `ol_cleanup` | する | 削除のジョブ（§5）だけ | users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） | `USING (true)`（SELECT・DELETE のポリシーだけ） |
 | `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） | なし（表の権限がない） |
@@ -157,6 +157,13 @@
 | `ol_incident` | しない | 障害対応で中身を見るときだけ（docs/decisions/0043） | users・options・achievements・events の SELECT だけ | `USING (true)`（SELECT のポリシーだけ） |
 
 - ロールはクラスタ全体のものなので、マイグレーションではなく `npm --prefix backend run db:roles`（手元。テストは `db:roles:test`）が superuser（`ADMIN_DATABASE_URL`）で作る。パスワードは `DATABASE_URL`・`APP_DATABASE_URL` などの URL から取り、何度流しても同じ結果になる。あわせて `DATABASE_URL` の DB を `ol_migrator` の持ち物として作る（持ち主が違えば `--recreate` を付けたときだけ消して作り直す。`db:roles:test` は名前が `_test` で終わる DB だけを扱い、いつも作り直す）。表の権限・ポリシー・関数はマイグレーションで付ける
+- 確認用・本番は 1 台の Cloud SQL を共用し、ロールはインスタンス全体で共通なので、環境ごとにログイン用のロールを分ける（docs/decisions/0056）。上の表の `ol_*` は、確認用・本番では**ログインしないグループのロール**にする（権限・ポリシー・持ち主はこれまでどおり `ol_*` に付けるので、マイグレーションは手元・CI と同じ）。ログインは `ol_<ロール>_<env>`（`ol_migrator_staging`・`ol_app_production` など）で行う
+  - `ol_app_<env>`・`ol_metrics_<env>` は、グループのロールのメンバーにし、権限を引き継ぐ（`WITH INHERIT TRUE, SET FALSE`。`TO ol_app` のポリシーが効く）
+  - `ol_migrator_<env>`・`ol_cleanup_<env>` は、強いロールなので引き継がず、`SET ROLE` だけができるメンバーにする（`WITH INHERIT FALSE, SET TRUE`）。`ALTER ROLE … SET role = 'ol_migrator'` で、つないだ時点でグループのロールになる（作った表・関数の持ち主は `ol_migrator` のまま。マイグレーションの `RESET ROLE` もここに戻る）
+  - 各環境の DB（`optionlist_<env>`）の持ち主は、環境ごとのログインしないロール `ol_owner_<env>` にし、誰もそのメンバーにしない（`rls-checks.sql` の強いロールに入れる）。DB の持ち主と権限はクラスタ全体の `pg_database` にあるので、両方の環境で `ol_migrator` を持ち主にすると、確認用の `ol_migrator_staging` から本番の DB に CONNECT を足す・DB を消すことができてしまうため。`ol_migrator` には、その DB の `public` スキーマの `USAGE, CREATE`（`WITH GRANT OPTION`。マイグレーションが `ol_definer` に付けるため）だけを付ける。手元・CI の DB はこれまでどおり `ol_migrator` が持ち主
+  - 各環境の DB の CONNECT は PUBLIC から外し、その環境のログイン用のロールと管理用のユーザー（`postgres`）にだけ付ける。確認用のパスワードが漏れても、本番の DB にはつなげない
+  - ログイン用のロールには、表・関数の権限を直接付けない。確認用・本番の `ol_migrator` には CREATEDB を付けない（マイグレーションは DB を作らない `dbmate migrate` で流す。docs/decisions/0048・0057）
+  - 作るのは `npm run infra:setup -- db <env>`。Cloud SQL Auth Proxy 越しに、管理用のユーザー（`postgres`。superuser ではない）で `npm --prefix backend run db:roles:cloud -- --env <env>` を流す。superuser でないと、`CREATE DATABASE … OWNER ol_owner_<env>` と DB・`public` スキーマの権限の付け替えに `ol_owner_<env>` への SET が要るので、その間だけ自分に付けて外す。持ち主が違う DB は消さずに止まる。属性（`NOSUPERUSER` など）は今の値と違うものだけを書く（superuser でないと、書くだけで拒まれる）
 - 本番で中身を見るのは障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに `ol_incident` を付け（`GRANT ol_incident TO <IAM のユーザー>`）、終わったらすぐ外す（`REVOKE`）。付けた・外したことは Cloud Audit Logs に残り、日付と理由を `docs/ops/data-access.md` に書く。IAM の管理用ユーザーそのものには、利用者の表のポリシーを付けない（ふだんは 0 行しか見えない）
 - `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer`・`ol_incident` だけ（testing.md §7 で確かめる）
 - `ol_migrator` は `ol_definer` のメンバーにする。ただし `GRANT ol_definer TO ol_migrator WITH INHERIT FALSE, SET TRUE`（権限は引き継がず、`SET ROLE` だけができる）にする。マイグレーションで関数とビューを作り、持ち主を `ol_definer` に移す（`ALTER FUNCTION/VIEW … OWNER TO ol_definer`）・作り直すには、PostgreSQL 16 以降では `SET ROLE` できることが要るため。強いロールへのメンバーシップの例外はこれと、ロールを作ったユーザーに自動で付く ADMIN だけ（testing.md §7）

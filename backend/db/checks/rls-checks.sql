@@ -9,12 +9,21 @@ SELECT rolname AS violation FROM pg_roles
  WHERE rolname LIKE 'ol\_%' AND (rolbypassrls OR rolsuper);
 
 -- check: app_owns_nothing
--- ol_app はどの表・ビュー・関数の持ち主でもない（持ち主は FORCE がなければ RLS を受けない）
+-- ol_app（と確認用・本番のログイン用の ol_app_<env>。docs/decisions/0056）はどの表・ビュー・関数の持ち主でもない（持ち主は FORCE がなければ RLS を受けない）
 SELECT c.relname AS violation FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
- WHERE n.nspname = 'public' AND pg_get_userbyid(c.relowner) = 'ol_app'
+ WHERE n.nspname = 'public' AND pg_get_userbyid(c.relowner) ~ '^ol_app(_staging|_production)?$'
 UNION ALL
 SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
- WHERE n.nspname = 'public' AND pg_get_userbyid(p.proowner) = 'ol_app';
+ WHERE n.nspname = 'public' AND pg_get_userbyid(p.proowner) ~ '^ol_app(_staging|_production)?$';
+
+-- check: env_logins_hold_no_privileges
+-- 確認用・本番のログイン用のロール（ol_<ロール>_<env>）は、表・関数の権限を直接持たない。権限はグループのロール（ol_*）にだけ付ける（docs/decisions/0056）
+SELECT c.relname || ': ' || pg_get_userbyid(a.grantee) AS violation
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, aclexplode(c.relacl) a
+ WHERE n.nspname = 'public' AND pg_get_userbyid(a.grantee) ~ '^ol_[a-z]+_(staging|production)$'
+UNION ALL
+SELECT p.proname || ': ' || pg_get_userbyid(a.grantee) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, aclexplode(p.proacl) a
+ WHERE n.nspname = 'public' AND pg_get_userbyid(a.grantee) ~ '^ol_[a-z]+_(staging|production)$';
 
 -- check: one_app_policy_per_table
 -- RLS のある表ごとに、ol_app か PUBLIC に当たるポリシーがちょうど 1 本で、ALL の USING と WITH CHECK が
@@ -42,17 +51,23 @@ SELECT tablename || '.' || policyname AS violation FROM pg_policies
 
 -- check: app_is_not_a_member_of_other_roles
 -- ポリシーは TO のロールのメンバーにも効くので、ol_app がほかの ol_* のメンバーになると全員の行が見える
-SELECT r.rolname AS violation FROM pg_roles r
- WHERE r.rolname LIKE 'ol\_%' AND r.rolname <> 'ol_app' AND pg_has_role('ol_app', r.oid, 'MEMBER');
+-- 確認用・本番のログイン用の ol_app_<env>（ol_app のメンバー）も、ol_app のほかの ol_* のメンバーにならない（docs/decisions/0056）
+SELECT a.rolname || ' → ' || r.rolname AS violation FROM pg_roles a CROSS JOIN pg_roles r
+ WHERE a.rolname ~ '^ol_app(_staging|_production)?$'
+   AND r.rolname LIKE 'ol\_%' AND r.rolname NOT IN ('ol_app', a.rolname) AND pg_has_role(a.oid, r.oid, 'MEMBER');
 
 -- check: strong_role_memberships
 -- 強いロールへのメンバーシップで、権限を引き継ぐ（INHERIT）か SET ROLE できる（SET）ものは、メンバーが誰でも 0 件
--- 例外は ADMIN だけのもの（PostgreSQL 16 以降でロールを作ったユーザーに付く形）と、ol_migrator → ol_definer の SET だけ（data.md §4）
+-- 例外は ADMIN だけのもの（PostgreSQL 16 以降でロールを作ったユーザーに付く形）と、ol_migrator → ol_definer の SET だけ（data.md §4）、
+-- 確認用・本番のログイン用の ol_migrator_<env> → ol_migrator・ol_cleanup_<env> → ol_cleanup の SET だけ（docs/decisions/0056）
+-- 確認用・本番の DB の持ち主 ol_owner_<env> も強いロールとして見る（メンバーになれば、その DB の CONNECT を足す・DB を消すことができる。例外はない）
 SELECT pg_get_userbyid(m.member) || ' → ' || r.rolname AS violation
   FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid
- WHERE r.rolname IN ('ol_migrator', 'ol_cleanup', 'ol_definer', 'ol_incident')
+ WHERE (r.rolname IN ('ol_migrator', 'ol_cleanup', 'ol_definer', 'ol_incident') OR r.rolname ~ '^ol_owner_(staging|production)$')
    AND (m.inherit_option OR m.set_option)
-   AND NOT (r.rolname = 'ol_definer' AND pg_get_userbyid(m.member) = 'ol_migrator' AND m.set_option AND NOT m.inherit_option);
+   AND NOT (m.set_option AND NOT m.inherit_option AND (
+         (r.rolname = 'ol_definer' AND pg_get_userbyid(m.member) = 'ol_migrator')
+      OR (r.rolname IN ('ol_migrator', 'ol_cleanup') AND pg_get_userbyid(m.member) IN (r.rolname || '_staging', r.rolname || '_production'))));
 
 -- check: incident_reads_only
 -- ol_incident の表の権限は SELECT だけ
@@ -96,5 +111,5 @@ SELECT p.proname || ': PUBLIC' AS violation FROM pg_proc p JOIN pg_namespace n O
 UNION ALL
 SELECT p.proname || ': ' || r.rolname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace CROSS JOIN pg_roles r
  WHERE n.nspname = 'public' AND p.proname LIKE 'auth\_%'
-   AND r.rolname LIKE 'ol\_%' AND r.rolname NOT IN ('ol_app', 'ol_definer')
+   AND r.rolname LIKE 'ol\_%' AND r.rolname NOT IN ('ol_app', 'ol_definer', 'ol_app_staging', 'ol_app_production')
    AND has_function_privilege(r.oid, p.oid, 'EXECUTE');

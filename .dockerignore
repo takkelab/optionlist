@@ -9,6 +9,7 @@
 .claude
 docs
 e2e
+infra
 scripts
 tools
 backend/uploads

@@ -62,7 +62,7 @@ AI が何かに詰まり、力ずくで解決したときは「解決したか�
 
 ## 5. リリースの実装の順番
 一般向けに公開するための順番（docs/decisions/0032〜0046）。§1 の進め方（1 ステップ ＝ 1 ブランチ ＝ 1 PR、Plan Mode、reviewer、`npm run pr:merge`、使用量の記録）はそのまま使う。
-各ステップの「完了の条件」はコマンドで確かめられる形で書く。PR 本文に、そのコマンドと結果（終了コード・件数）を貼る。`<確認用のドメイン>`・`<本番のドメイン>` は R8 で決めたものに置き換える。
+各ステップの「完了の条件」はコマンドで確かめられる形で書く。PR 本文に、そのコマンドと結果（終了コード・件数）を貼る。`<確認用のドメイン>`・`<本番のドメイン>` は、独自ドメインをつなぐまで（R11。docs/decisions/0057）は Cloud Run の URL（`optionlist-staging-55327626788.asia-northeast1.run.app`・`optionlist-production-55327626788.asia-northeast1.run.app`）に置き換える。
 
 ### 共通の完了の条件（どのステップでも）
 ```sh
@@ -143,15 +143,16 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `docker build -t optionlist:local .` が通る（CI の中で）
   - `npm run smoke:image -- optionlist:local` が通る（`/api/health` が 200、`/` に CSP と `X-Robots-Tag: noindex` が付き、本文に noindex の meta が入る、`PUBLIC_INDEXING=true` で起動し直すとヘッダーも meta も消える、`/api/metrics` がトークンなしで 404、`/suggestions/1` が `index.html` を返す）
 
-### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036・0055）
-- `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
+### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036・0055・0056・0057）
+- `infra/` の gcloud のスクリプト（`npm run infra:setup -- <手順>`。Cloud SQL の共用インスタンス、DB と環境ごとのログイン用のロール〈data.md §4〉、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、Workload Identity Federation、アクセスのログのバケット）。独自ドメインはまだつながない（R11。docs/decisions/0057）
+- マイグレーションの Job は本番用のイメージで `dbmate migrate` を流す（イメージに dbmate とマイグレーションのファイルを入れる。`smoke:image` でも流す）
 - `npm run infra:check -- <env>`（architecture.md §4.1 の設定を gcloud で読んで確かめる）
 - `.github/workflows/deploy.yml`（main で確認用へ、`workflow_dispatch` を自分で起動して、確認用でトラフィックを 100% 受けているリビジョンのイメージをダイジェストで本番へ。docs/decisions/0055）
 - アクセスのログ（Cloud Logging の `_Default` などのバケット）の保存場所を決める。国内（asia-northeast1）に置けなければ、プライバシーポリシーの「預け先」を直す（docs/decisions/0052）
-- 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
+- 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）
 - 完了の条件
   - 共通の条件
-  - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、testing.md §7 の 2 のロールとポリシーの確かめ〈BYPASSRLS がない、`ol_app`・`PUBLIC` 宛てのポリシーが各表 1 本で決まった式だけ、`ol_app` がほかの `ol_*` のメンバーでない、`USING (true)` が許可したロールにしかない〉と同じ SQL を流す。マイグレーションのテストと同じ SQL のファイル〈`backend/db/checks/rls-checks.sql`〉を使う）
+  - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、testing.md §7 の 2 のロールとポリシーの確かめ〈BYPASSRLS がない、`ol_app`・`PUBLIC` 宛てのポリシーが各表 1 本で決まった式だけ、`ol_app` がほかの `ol_*` のメンバーでない、`USING (true)` が許可したロールにしかない〉と同じ SQL を流す。マイグレーションのテストと同じ SQL のファイル〈`backend/db/checks/rls-checks.sql`〉を使う。あわせて、各環境の DB に CONNECT できるのがその環境のログイン用のロールだけで、`ol_*` のグループのロールにログインできないことを確かめる。docs/decisions/0056）
   - `npm run infra:check -- staging`・`production` が、デプロイ用のサービスアカウントの Workload Identity Federation の条件（`repository_id`・`repository_owner_id`・`workflow_ref`・`event_name`。docs/decisions/0055）と、`GITHUB_TOKEN` の既定の権限が `read`・`.github/workflows/` に `actions: write`・`write-all` がないこと、本番のデプロイ用のサービスアカウントの確認用への権限が読み取りだけであることも確かめる
   - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
   - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
@@ -181,6 +182,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
 
 ### R11. 公開（docs/decisions/0045）
+- 1 段目より前に、独自ドメインを決めてつなぐ（docs/decisions/0057。Cookie とホーム画面のアプリはオリジンごとなので、自分のデータを作り始める前に URL を決める）。Cloud Run のドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）。`APP_ORIGIN` を独自ドメインに変え（`infra/config.ts` の `origin`）、`infra:check` で確かめる
 - `docs/ops/launch-checklist.md` に、自分だけの 2 週間・知人数人・一般公開のそれぞれの確認の項目を `- [ ]` で書き、終わったものを `- [x]` にする
 - 1 段目（自分だけの 2 週間）の間に、本番で最初の復旧の訓練（`npm run ops:restore-drill -- production`）を行う（data.md §6）
 - 実機での結果（iPhone のホーム画面に追加したときに同じアカウントか）を書き、違ったら screens.md §9 と docs/decisions/ を直す
@@ -189,6 +191,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - 共通の条件
   - `grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0（終わっていない項目がない）
   - `docs/ops/restore-drills.md` の表に、本番の訓練の成功の行が 1 行以上ある（`grep -c "| optionlist_production |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上。R10 の行は `optionlist_staging` なので数えられない）
+  - 独自ドメインで `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`（ここからは `<本番のドメイン>` は独自ドメイン）
   - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
   - `npm run infra:check -- production` が終了コード 0
   - `git grep -n "example.invalid" -- frontend/src` が 0 件（ポリシーの仮の問い合わせ先を、専用のアドレスに差し替えた。docs/decisions/0052）
