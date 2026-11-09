@@ -36,6 +36,8 @@ jobs:
       DATABASE_URL: postgres://ol_migrator:ol_migrator@127.0.0.1:5432/optionlist_test?sslmode=disable
       APP_DATABASE_URL: postgres://ol_app:ol_app@127.0.0.1:5432/optionlist_test?sslmode=disable
       IP_HASH_SECRET: ci-ip-hash-secret
+      # GcsPhotoFiles のテストがつなぐ fake-gcs-server（下の Start fake-gcs-server。CI では GCS のテストを飛ばさない。docs/decisions/0051）
+      STORAGE_EMULATOR_HOST: http://localhost:4443
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,9 +63,21 @@ jobs:
             echo "DATABASE_URL=$DATABASE_URL"
             echo "APP_DATABASE_URL=$APP_DATABASE_URL"
             echo "IP_HASH_SECRET=$IP_HASH_SECRET"
+            echo "STORAGE_EMULATOR_HOST=$STORAGE_EMULATOR_HOST"
           } > backend/.env.test
           npm --prefix backend run db:roles:test
           npm --prefix backend run db:migrate:test
+      # サービスコンテナは起動の引数（-scheme http など）を渡せないので、手元と同じ npm script で docker run する
+      - name: Start fake-gcs-server
+        run: |
+          npm --prefix backend run gcs:emulator
+          for i in $(seq 1 30); do
+            curl -fsS "$STORAGE_EMULATOR_HOST/storage/v1/b" > /dev/null && exit 0
+            sleep 1
+          done
+          echo "fake-gcs-server が起動しなかった" >&2
+          docker logs optionlist-fake-gcs
+          exit 1
       - name: Test the quality scripts
         run: npm run test:scripts
       - name: metrics:check

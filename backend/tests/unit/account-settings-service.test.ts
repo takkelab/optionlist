@@ -106,7 +106,7 @@ describe("AccountSettingsService", () => {
 
     // 今の端末の別のアカウントは、移ったあとに消す（行と写真のファイル）
     it("removes the other account on this device after moving", async () => {
-      const photo = await files.save(Buffer.from("x"), "jpg");
+      const photo = await files.save(Buffer.from("x"));
       store.giveRow(3, { createdAt: new Date(CREATED), hasRecoveryCode: false }, [photo]);
       store.answerRestore({ status: "ok", userId: 5 });
       await service.restore(3, "ip", { code: CODE, replace: true });
@@ -137,7 +137,7 @@ describe("AccountSettingsService", () => {
 
     // 行を消したあとでファイルを消す。ファイルを消せなくても成功し、orphan_file_errors_total が増える
     it("removes the rows and then the photo files, and still succeeds when a file cannot be removed", async () => {
-      const photo = await files.save(Buffer.from("x"), "jpg");
+      const photo = await files.save(Buffer.from("x"));
       store.giveRow(3, { createdAt: new Date(CREATED), hasRecoveryCode: false }, [photo]);
       files.failRemoving();
       await service.removeAll(3);

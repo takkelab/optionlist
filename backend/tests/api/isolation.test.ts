@@ -10,6 +10,7 @@ import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
 import { OptionsApiClient, SessionAgent } from "../fakes/OptionsApiClient";
 import { RouteRecorder } from "../fakes/RouteRecorder";
 import { TestApp } from "../fakes/TestApp";
+import { TestImages } from "../fakes/TestImages";
 import { TestDatabase } from "../fakes/TestDatabase";
 import { TestUsers } from "../fakes/TestUsers";
 
@@ -72,7 +73,7 @@ const data = new TestDatabase(pool);
 const users = new TestUsers(pool);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-isolation-"));
 const app = new TestApp({ db: new PgDatabase(appPool, new PromMetrics()), photoFiles: new LocalPhotoFiles(uploadDir) }).build();
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]);
+const JPEG = await new TestImages().jpeg();
 // A が提案から追加する提案
 const SUGGESTION = 1;
 

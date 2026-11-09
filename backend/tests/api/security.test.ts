@@ -5,6 +5,7 @@ import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakeDatabase } from "../fakes/FakeDatabase";
 import { FixedClock } from "../fakes/FakeOptionStore";
 import { SessionAgent } from "../fakes/OptionsApiClient";
+import type { ApiResult } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
 import { TestDatabase } from "../fakes/TestDatabase";
 import { TEST_METRICS_AUTH, TEST_ORIGIN, TestRequests } from "../fakes/TestRequests";
@@ -248,7 +249,7 @@ describe("write rate limits (api.md §6)", () => {
 
   it("counts photo uploads as writes but not restore (counted in the database) or writes without an account", async () => {
     const clock = new FixedClock(NOW);
-    const rateLimits = { events: { limit: 1000, windowMs: MINUTE_MS }, writes: { limit: 2, windowMs: MINUTE_MS } };
+    const rateLimits = { events: { limit: 1000, windowMs: MINUTE_MS }, writes: { limit: 2, windowMs: MINUTE_MS }, photos: { limit: 1000, windowMs: MINUTE_MS } };
     const limited = new TestApp({ db, clock, rateLimits }).build();
     const user = await users.create(clock.now());
     const agent = new SessionAgent(limited, user.cookie);
@@ -267,9 +268,33 @@ describe("write rate limits (api.md §6)", () => {
     expect([photo.status, write.status, over.status]).toEqual([404, 404, 429]);
   });
 
+  // 写真の保存は、ほかの書き込みとは別に 1 時間 60 回まで（api.md §6）。ほかの書き込みは止めない
+  it("limits photo uploads separately, with Retry-After", async () => {
+    const clock = new FixedClock(NOW);
+    const rateLimits = {
+      events: { limit: 1000, windowMs: MINUTE_MS },
+      writes: { limit: 1000, windowMs: MINUTE_MS },
+      photos: { limit: 1, windowMs: 60 * MINUTE_MS },
+    };
+    const limited = new TestApp({ db, clock, rateLimits }).build();
+    const user = await users.create(clock.now());
+    const agent = new SessionAgent(limited, user.cookie);
+    const upload = (): Promise<ApiResult> =>
+      agent.send((r) => {
+        const pending = r.put("/api/achievements/999/photo");
+        return pending.attach("photo", Buffer.from([0xff, 0xd8, 0xff]), "photo.jpg");
+      });
+    const first = await upload();
+    expect(first.status).toBe(404);
+    const { status, headers } = await upload();
+    expect([status, headers["retry-after"]]).toEqual([429, "3600"]);
+    const other = await agent.send((r) => r.post(MISSING_ACHIEVEMENT));
+    expect(other.status).toBe(404);
+  });
+
   it("does not count POST /api/events in the per-account limit", async () => {
     const clock = new FixedClock(NOW);
-    const rateLimits = { events: { limit: 1000, windowMs: MINUTE_MS }, writes: { limit: 1, windowMs: MINUTE_MS } };
+    const rateLimits = { events: { limit: 1000, windowMs: MINUTE_MS }, writes: { limit: 1, windowMs: MINUTE_MS }, photos: { limit: 1000, windowMs: MINUTE_MS } };
     const limited = new TestApp({ db, clock, rateLimits }).build();
     const user = await users.create(clock.now());
     const agent = new SessionAgent(limited, user.cookie);

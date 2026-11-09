@@ -121,7 +121,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 
 ### R5. 写真を Cloud Storage へ（docs/decisions/0037）
 - `GcsPhotoFiles`（`PHOTO_BUCKET` があれば使う）、`GcsPhotoFiles` での配信（持ち主の確かめと `private`・`Vary: Cookie` は R2 で入れた）、配信のそのほかのヘッダー（CSP・`Content-Disposition`）、sharp で作り直す、1 人あたりの上限と保存の回数の制限、`achievements.photo_bytes`
-- CI に fake-gcs-server のサービスコンテナを足し、`GcsPhotoFiles` を `LocalPhotoFiles` と同じテストで確かめる
+- CI で fake-gcs-server を起動し（サービスコンテナは起動の引数を渡せないので `docker run`。docs/decisions/0051）、`GcsPhotoFiles` を `LocalPhotoFiles` と同じテストで確かめる
 - 完了の条件
   - 共通の条件（`metrics:check` で、アップロードの p95 が 300ms 以内。超えたら新しい記録で目標を見直す）
   - `npm --prefix backend run test:file -- tests/api/achievement-photos.test.ts tests/api/photo-files-contract.test.ts` が通る（EXIF が残らない、`private`・`Vary: Cookie`・CSP、上限で 429、他人の写真が 404）

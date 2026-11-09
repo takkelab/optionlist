@@ -68,6 +68,8 @@ export interface DataGenerator {
 
 const CHUNK_SIZE = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 写真 1 枚の大きさ（長辺 1280px の JPEG のだいたいの大きさ）
+const PHOTO_BYTES = 300_000;
 // 作成日などを散らす期間（数年分を想定。metrics.md §1）
 const SPAN_DAYS = 3 * 365;
 // 1 人が提案から追加した option の数。追加済みとまだの提案が混ざるよう、全件にはしない
@@ -144,10 +146,12 @@ export class PerfDataGenerator implements DataGenerator {
       for (let i = 0; i < this.#counts.achievements; i++) {
         // 一覧が写真を読む分も測れるよう、3 件に 1 件に写真を付ける（ファイルは置かない。名前を読むだけ。名前は全員で重ならない）
         const photo = i % 3 === 0 ? `perf-${u}-${i}.jpg` : null;
-        rows.push([u, firstOption + Math.floor(this.#random.next() * this.#optionCount()), this.#pastDate(), photo]);
+        // 大きさは作り直した写真のだいたいの大きさ（1 人あたりの上限の判定に使う。data.md §3）
+        const bytes = photo === null ? null : PHOTO_BYTES;
+        rows.push([u, firstOption + Math.floor(this.#random.next() * this.#optionCount()), this.#pastDate(), photo, bytes]);
       }
     }
-    await this.#insert("achievements", ["user_id", "option_id", "achieved_at", "photo_filename"], rows);
+    await this.#insert("achievements", ["user_id", "option_id", "achieved_at", "photo_filename", "photo_bytes"], rows);
   }
 
   async #insertEvents(): Promise<void> {

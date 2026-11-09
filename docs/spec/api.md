@@ -42,7 +42,8 @@
 - 403 `FORBIDDEN`: `GET`・`HEAD` 以外で `Origin` が違う（§1）
 - 404 `NOT_FOUND`: 存在しない・他人の option / 達成記録 / 写真のファイル、存在しない suggestion（`:id` が正の整数でないものを含む）、合わない復旧コード、アカウントがないのに復旧コードを発行しようとした、どのエンドポイントにも当たらない `/api/*`
 - 409 `CONFLICT`: すでに追加済みの提案をもう一度追加しようとした、復旧コードで移るとこの端末の別のアカウントのデータが消えるのに `replace` がない（§6。`localItemCount` を添える）
-- 429 `TOO_MANY_REQUESTS`: 回数の制限（§6）を超えた、写真の 1 人あたりの上限（data.md §3）を超えた。`Retry-After` を付ける
+- 429 `TOO_MANY_REQUESTS`: 回数の制限（§6）を超えた。`Retry-After` を付ける
+- 429 `PHOTO_LIMIT_REACHED`: 写真の 1 人あたりの上限（data.md §3）を超えた。待っても解けないので `Retry-After` は付けない（docs/decisions/0051）
 - 500 `INTERNAL_ERROR`: 想定外のエラー。共通のエラーハンドラで返し、必ずログ（`kind: unhandled_error`）に出してメトリクスで数える。応答の `message` に内部の情報を入れない
 
 ## 4. 型
@@ -95,7 +96,7 @@ type Event = {
 }
 type ApiError = {
   error: {
-    code: 'VALIDATION_ERROR' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'TOO_MANY_REQUESTS' | 'INTERNAL_ERROR'
+    code: 'VALIDATION_ERROR' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'TOO_MANY_REQUESTS' | 'PHOTO_LIMIT_REACHED' | 'INTERNAL_ERROR'
     message: string
   }
 }
@@ -109,12 +110,13 @@ type RestoreConflict = ApiError & { localItemCount: number }
 写真は達成記録に付ける。達成 1 回に 1 枚（docs/decisions/0028）。置き場所と配り方は docs/decisions/0037。
 
 - frontend で縮小・圧縮してから、multipart の `photo` で送る（長辺 1280px、JPEG 品質 0.8。canvas を通すので EXIF も消える）※仮決め
-- backend は形式（JPEG / PNG / WebP。申告ではなく先頭のバイトで判定）とサイズ（5MB まで）を確かめたうえで、**sharp で作り直す**（向きを直し、長辺 1280px まで縮め、JPEG 品質 80 にし、メタデータをすべて外す）。読めなければ 400。保存するのは作り直したものだけ
-- 保存先は `PhotoFiles` の実装で切り替える。手元と CI は `LocalPhotoFiles`（`UPLOAD_DIR`。既定は `backend/uploads/`）、確認用と本番は `GcsPhotoFiles`（`PHOTO_BUCKET` の Cloud Storage の非公開の入れ物）。名前はサーバーで決めた UUID にし、DB にはファイル名と大きさだけ入れる（パストラバーサル対策）
-- 保存の前に、1 人あたりの上限（data.md §3）を確かめる。超えるなら 429
+- backend は形式（JPEG / PNG / WebP。申告ではなく先頭のバイトで判定）とサイズ（5MB まで）を確かめたうえで、**sharp で作り直す**（向きを直し、長辺 1280px まで縮め、JPEG 品質 80 にし、メタデータをすべて外す。5,000 万画素を超える画像は読まない）。読めなければ 400。保存するのは作り直したもの（JPEG）だけ
+- 確かめる順番は、形式（400）→ 達成があるか（404）→ 作り直し（400）→ 上限（429）
+- 保存先は `PhotoFiles` の実装で切り替える。手元と CI は `LocalPhotoFiles`（`UPLOAD_DIR`。既定は `backend/uploads/`）、確認用と本番は `GcsPhotoFiles`（`PHOTO_BUCKET` の Cloud Storage の非公開の入れ物）。名前はサーバーで決めた UUID（`<UUID>.jpg`）にし、DB にはファイル名と大きさ（作り直した後のバイト数）だけ入れる（パストラバーサル対策）
+- 保存の前に、1 人あたりの上限（data.md §3）を確かめる。置き換える写真は数えない。超えるなら 429 `PHOTO_LIMIT_REACHED`。確かめるのは保存の前に読むだけなので、同時に保存すると 1 枚超えることがある（保存の回数の制限で抑える。§6）
 - 置き換えは、新しいファイルを書く → 行を更新 → 古いファイルを消す、の順にする。行を更新できなければ、書いたファイルを消す
 - multipart はファイル 1 つだけを受け取り、ほかの項目があれば 400 にする
-- 配信は `/api/photos/<ファイル名>`。backend が、そのファイル名が**自分の達成の写真か**を DB で（RLS の中で）確かめてから返す。違えば・なければ 404。名前がランダムなことには頼らない
+- 配信は `/api/photos/<ファイル名>`。backend が、そのファイル名が**自分の達成の写真か**を DB で（RLS の中で）確かめてから、`PhotoFiles` から中身を読んで返す（Cloud Storage を公開せず、署名 URL も使わない。docs/decisions/0037）。違えば・なければ（行はあるのにファイルがないときも）404。名前がランダムなことには頼らない
 - 配信のヘッダー: `Cache-Control: private, max-age=31536000, immutable`（名前は置き換えのたびに変わる）、`Vary: Cookie`、`Content-Type`（保存した形式）、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'`、`Content-Disposition: inline`
 - 写真を置き換える・消す、option を削除する、アカウントを消すときは、関連する画像ファイルも消す（失敗はログ〈`kind: orphan_file_error`〉とメトリクス `orphan_file_errors_total`。行は消えているので API は成功のまま。残ったファイルは削除のジョブが拾う。data.md §5）
 - `backend/uploads/` は git に含めない。テストと E2E は `UPLOAD_DIR` を別のフォルダにする
@@ -131,7 +133,7 @@ type RestoreConflict = ApiError & { localItemCount: number }
 - 回数の制限（超えたら 429。docs/decisions/0038）※仮決め
   - アカウントの作成: 1 つの IP から 1 時間に 20 件まで（DB の auth_attempts で数える）
   - 復旧コードの入力: 1 つの IP から 1 時間に 10 回まで（同上。合っても合わなくても数える）
-  - 写真の保存: 1 アカウント 1 時間に 60 回まで（台ごとのメモリで数える）
+  - 写真の保存: 1 アカウント 1 時間に 60 回まで（台ごとのメモリで数える。そのほかの書き込みの 1 分 120 回にも数える）
   - そのほかの書き込み: 1 アカウント 1 分に 120 回まで（台ごとのメモリで数える）
   - `POST /api/events`: 1 つの IP から 1 分に 20 リクエストまで（台ごとのメモリで数える。アカウントなしでも受け取るので、アカウントではなく IP で数える）
 - IP は Cloud Run が付ける `X-Forwarded-For` の右端から取る（Express の `trust proxy` を 1 にする）。DB とアプリが書くログには `IP_HASH_SECRET` で HMAC したものだけを入れる（Cloud Run が自動で残すリクエストのログには IP がそのまま入り、30 日で消える。プライバシーポリシーに書く。docs/decisions/0039）

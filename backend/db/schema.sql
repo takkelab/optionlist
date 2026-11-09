@@ -111,7 +111,9 @@ CREATE TABLE public.achievements (
     option_id bigint NOT NULL,
     achieved_at timestamp(3) with time zone NOT NULL,
     photo_filename character varying(100),
-    user_id bigint NOT NULL
+    user_id bigint NOT NULL,
+    photo_bytes integer,
+    CONSTRAINT chk_achievements_photo_bytes CHECK ((((photo_filename IS NULL) AND (photo_bytes IS NULL)) OR ((photo_filename IS NOT NULL) AND (photo_bytes IS NOT NULL) AND (photo_bytes >= 0))))
 );
 
 ALTER TABLE ONLY public.achievements FORCE ROW LEVEL SECURITY;
@@ -754,4 +756,5 @@ CREATE POLICY users_migrator ON public.users TO ol_migrator USING (true) WITH CH
 INSERT INTO public.schema_migrations (version) VALUES
     ('20261108000000'),
     ('20261108120000'),
-    ('20261108130000');
+    ('20261108130000'),
+    ('20261109030405');

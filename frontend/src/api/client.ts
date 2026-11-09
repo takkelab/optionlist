@@ -1,5 +1,7 @@
 import { isAxiosError } from 'axios'
 import type { AxiosInstance } from 'axios'
+import { PhotoRefusals } from '../lib/PhotoRefusals'
+import type { PhotoRefusal } from '../lib/PhotoRefusals'
 import type {
   AccountStatus,
   Achievement,
@@ -13,6 +15,24 @@ import type {
   SuggestionCatalog,
   SuggestionDetail,
 } from '../../../shared/types'
+
+export type { PhotoRefusal }
+
+const refusals = new PhotoRefusals()
+
+// 写真を保存させてもらえなかった（429。api.md §3。理由の読み方は lib/PhotoRefusals）
+export class PhotoRefusedError extends Error {
+  readonly #reason: PhotoRefusal
+
+  constructor(reason: PhotoRefusal, cause: unknown) {
+    super(reason === 'full' ? '写真の上限' : '写真の保存の回数の制限', { cause })
+    this.#reason = reason
+  }
+
+  reason(): PhotoRefusal {
+    return this.#reason
+  }
+}
 
 // PATCH /api/options/:id で変えるもの。plannedOn は null で消す（api.md §2）
 export type OptionUpdate = { title?: string; status?: OptionStatus; plannedOn?: string | null }
@@ -107,11 +127,18 @@ export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi, Acc
     return res.data
   }
 
+  // 429 は PhotoRefusedError にする（上限〈PHOTO_LIMIT_REACHED〉と回数の制限で文言が違う。screens.md §7）
   async setPhoto(achievementId: number, photo: Blob): Promise<Achievement> {
     const form = new FormData()
     form.append('photo', photo, 'photo.jpg')
-    const res = await this.#http.put<Achievement>(`/achievements/${achievementId}/photo`, form)
-    return res.data
+    try {
+      const res = await this.#http.put<Achievement>(`/achievements/${achievementId}/photo`, form)
+      return res.data
+    } catch (error) {
+      const reason = refusals.reasonOf(this.#statusOf(error), this.#bodyOf(error))
+      if (reason === null) throw error
+      throw new PhotoRefusedError(reason, error)
+    }
   }
 
   async removePhoto(achievementId: number): Promise<void> {
@@ -178,6 +205,13 @@ export class HttpApiClient implements OptionsApi, SuggestionsApi, EventsApi, Acc
 
   async removeAll(): Promise<void> {
     await this.#http.delete('/account')
+  }
+
+  // 失敗した応答の本文（形は確かめない）。応答がなければ undefined
+  #bodyOf(error: unknown): unknown {
+    if (!isAxiosError(error)) return undefined
+    const { response } = error
+    return response === undefined ? undefined : (response.data as unknown)
   }
 
   #statusOf(error: unknown): number | undefined {

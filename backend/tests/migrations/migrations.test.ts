@@ -91,6 +91,7 @@ describe("schema after all migrations", () => {
       "achievements.achieved_at timestamp(3) with time zone NOT NULL",
       "achievements.photo_filename character varying(100) NULL",
       "achievements.user_id bigint NOT NULL",
+      "achievements.photo_bytes integer NULL",
       "auth_attempts.id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
       "auth_attempts.kind text NOT NULL",
       "auth_attempts.ip_hash bytea NOT NULL",
@@ -175,6 +176,7 @@ describe("schema after all migrations", () => {
     ]);
     // MySQL の ENUM の代わりに text と CHECK で値を決める（data.md §2）
     expect(checks).toEqual([
+      "achievements.chk_achievements_photo_bytes CHECK ((((photo_filename IS NULL) AND (photo_bytes IS NULL)) OR ((photo_filename IS NOT NULL) AND (photo_bytes IS NOT NULL) AND (photo_bytes >= 0))))",
       "auth_attempts.chk_auth_attempts_kind CHECK ((kind = ANY (ARRAY['create_account'::text, 'restore'::text])))",
       "options.chk_options_status CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text])))",
       "suggestions.chk_suggestions_season CHECK ((((season_from IS NULL) AND (season_to IS NULL)) OR ((season_from IS NOT NULL) AND (season_to IS NOT NULL) AND ((season_from >= 1) AND (season_from <= 12)) AND ((season_to >= 1) AND (season_to <= 12)))))",

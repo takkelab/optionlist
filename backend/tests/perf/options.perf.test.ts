@@ -6,6 +6,7 @@ import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Achievement, Option } from "../../../shared/types";
 import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
+import { TestImages } from "../fakes/TestImages";
 import { PgDatabase } from "../../src/infra/PgDatabase";
 import { PgPoolFactory } from "../../src/infra/PgPoolFactory";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
@@ -40,7 +41,8 @@ const MASTER_TABLES = ["themes", "tags", "suggestions", "suggestion_tags"];
 
 const PHOTO_RUNS = 20;
 const UNLIMITED = { limit: Number.MAX_SAFE_INTEGER, windowMs: 60_000 };
-const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1024 * 1024 - 4)]);
+// 本物の 1MB ほどの JPEG（ノイズなので縮めにくく、作り直しにいちばん時間がかかる側。sharp で作り直す時間を含めて測る）
+const PHOTO = await new TestImages().noiseJpeg(1024 * 1024);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-perf-photos-"));
 
 // アプリと EXPLAIN は ol_app（appPool）、データの確かめは pool（ol_migrator）。EXPLAIN は測る人の app.user_id にして流す（metrics.md §4）
@@ -60,7 +62,7 @@ beforeAll(async () => {
     db,
     sessionDb: new PgDatabase(appPool, new PromMetrics()),
     photoFiles: new LocalPhotoFiles(uploadDir),
-    rateLimits: { events: UNLIMITED, writes: UNLIMITED },
+    rateLimits: { events: UNLIMITED, writes: UNLIMITED, photos: UNLIMITED },
   }).listen(0);
   const { port } = server.address() as AddressInfo;
   servers.push(server);
@@ -194,7 +196,8 @@ describe("backend performance with the metrics.md §1 data", () => {
     const { id } = achieved as Achievement;
     const timings: number[] = [];
     for (let i = 0; i < PHOTO_RUNS; i++) {
-      const { ms } = await probe.upload(`/api/achievements/${id}/photo`, "photo", PHOTO, "photo.jpg");
+      const { ms, status } = await probe.upload(`/api/achievements/${id}/photo`, "photo", PHOTO, "photo.jpg");
+      expect(status).toBe(200);
       timings.push(ms);
     }
     await probe.call("DELETE", `/api/options/${optionId}`);

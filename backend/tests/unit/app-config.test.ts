@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AppEnvRules, EnvAppConfig } from "../../src/infra/AppConfig";
 
 // 環境変数の読み取り（architecture.md §4.2。docs/decisions/0050）
-const DEPLOYED = { APP_ORIGIN: "https://optionlist.example", METRICS_TOKEN: "t", IP_HASH_SECRET: "s" };
+const DEPLOYED = { APP_ORIGIN: "https://optionlist.example", METRICS_TOKEN: "t", IP_HASH_SECRET: "s", PHOTO_BUCKET: "photos" };
 
 describe("EnvAppConfig", () => {
   it("treats a missing APP_ENV as development without an origin", () => {
@@ -11,6 +11,7 @@ describe("EnvAppConfig", () => {
       appOrigin: null,
       metricsToken: "",
       ipHashSecret: "s",
+      photoBucket: null,
     });
   });
 
@@ -20,10 +21,11 @@ describe("EnvAppConfig", () => {
       appOrigin: "https://optionlist.example",
       metricsToken: "t",
       ipHashSecret: "s",
+      photoBucket: "photos",
     });
   });
 
-  it.each(["APP_ORIGIN", "METRICS_TOKEN", "IP_HASH_SECRET"])("stops in production without %s", (name) => {
+  it.each(["APP_ORIGIN", "METRICS_TOKEN", "IP_HASH_SECRET", "PHOTO_BUCKET"])("stops in production without %s", (name) => {
     const env = { APP_ENV: "production", ...DEPLOYED, [name]: "" };
     expect(() => new EnvAppConfig(env, new AppEnvRules()).read()).toThrow(name);
   });

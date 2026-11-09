@@ -73,8 +73,9 @@ export type Event = {
 
 export type ApiError = {
   // FORBIDDEN は Origin が違う書き込み（api.md §1）。TOO_MANY_REQUESTS は回数の制限（api.md §6）。Retry-After のヘッダーが付く
+  // PHOTO_LIMIT_REACHED は写真の 1 人あたりの上限（429。待っても解けないので Retry-After は付かない。api.md §3）
   error: {
-    code: "VALIDATION_ERROR" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL_ERROR";
+    code: "VALIDATION_ERROR" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "PHOTO_LIMIT_REACHED" | "INTERNAL_ERROR";
     message: string;
   };
 };

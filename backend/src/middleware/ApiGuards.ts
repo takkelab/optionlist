@@ -6,15 +6,21 @@ const SAFE_METHODS = new Set(["GET", "HEAD"]);
 // PUT /api/achievements/:id/photo（AchievementPhotoController と同じパス。ルーティングは大文字小文字と末尾の / を区別する）
 const PHOTO_UPLOAD = /^\/api\/achievements\/[^/]+\/photo$/;
 
-// /api の書き込みか（GET・HEAD 以外）
+// /api の書き込みか（GET・HEAD 以外）、写真のアップロードか
 export interface ApiWriteCheck {
   isWrite(req: Request): boolean;
+  isPhotoUpload(req: Request): boolean;
 }
 
 export class ApiRequests implements ApiWriteCheck {
   isWrite(req: Request): boolean {
     const { path, method } = req;
     return path.startsWith("/api/") && !SAFE_METHODS.has(method);
+  }
+
+  isPhotoUpload(req: Request): boolean {
+    const { path, method } = req;
+    return method === "PUT" && PHOTO_UPLOAD.test(path);
   }
 }
 
@@ -78,8 +84,7 @@ export class JsonContentType implements Middleware {
 
   // multipart を受けるのは写真のアップロードだけ（api.md §1・§5）
   #accepted(req: Request): string[] {
-    const { path, method } = req;
-    return method === "PUT" && PHOTO_UPLOAD.test(path) ? ["multipart/form-data"] : ["application/json"];
+    return this.#requests.isPhotoUpload(req) ? ["multipart/form-data"] : ["application/json"];
   }
 
   #hasBody(req: Request): boolean {

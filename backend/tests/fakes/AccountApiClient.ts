@@ -1,3 +1,4 @@
+import { TestImages } from "./TestImages";
 import type { Express } from "express";
 import type { Pool } from "pg";
 import type { Achievement, RecoveryCode } from "../../../shared/types";
@@ -20,8 +21,8 @@ export interface AccountClient {
   counts(): Promise<number[]>;
 }
 
-// backend は先頭のバイトで形式を見る（api.md §5）ので、JPEG の先頭だけのバイト列でよい
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]);
+// backend は sharp で作り直す（api.md §5）ので、本物の JPEG を送る
+const JPEG = await new TestImages().jpeg();
 
 // アカウントの API テスト（tests/api/account.test.ts）の操作
 export class AccountApiClient implements AccountClient {

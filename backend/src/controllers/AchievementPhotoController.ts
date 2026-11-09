@@ -9,20 +9,23 @@ import type { PathIdParser } from "./PathId";
 type Params = { id?: string };
 type UserId = number | null;
 
-// ファイルを返す口。Express の Response はこの形を満たす
-export interface FileResponse {
-  sendFile(path: string, options: { root: string; headers: Record<string, string> }, done: (error?: Error) => void): void;
+// 写真を返す口。Express の Response はこの形を満たす
+export interface PhotoResponse {
+  set(headers: Record<string, string>): PhotoResponse;
+  send(body: Buffer): void;
 }
 
 const MAX_BYTES = 5 * 1024 * 1024;
 // サーバーが決めた名前（UUID と拡張子）の形だけを受け付ける（パストラバーサル対策。api.md §5）
 const FILENAME = /^[A-Za-z0-9-]{1,80}\.(jpg|png|webp)$/;
 // 名前は置き換えのたびに変わるので、中身は変わらない（1 年キャッシュしてよい）。人ごとに違うので private と Vary: Cookie
-// 判定するのは先頭のバイトだけなので、後ろに別の中身があってもブラウザに推測させない（nosniff。api.md §5）
+// 写真に見せかけた HTML や SVG をブラウザに実行させない（nosniff と CSP の default-src 'none'。api.md §5、docs/decisions/0037）
 const SERVE_HEADERS = {
   "Cache-Control": "private, max-age=31536000, immutable",
   Vary: "Cookie",
   "X-Content-Type-Options": "nosniff",
+  "Content-Security-Policy": "default-src 'none'",
+  "Content-Disposition": "inline",
 };
 
 // 達成の写真（api.md §2・§5）。PUT は multipart の photo を受け取り、配信は /api/photos/<ファイル名>
@@ -30,13 +33,11 @@ const SERVE_HEADERS = {
 export class AchievementPhotoController implements Controller {
   readonly #ids: PathIdParser;
   readonly #photos: AchievementPhotoUseCases;
-  readonly #directory: string;
   readonly #user: CurrentUser;
 
-  constructor(ids: PathIdParser, photos: AchievementPhotoUseCases, directory: string, user: CurrentUser) {
+  constructor(ids: PathIdParser, photos: AchievementPhotoUseCases, user: CurrentUser) {
     this.#ids = ids;
     this.#photos = photos;
-    this.#directory = directory;
     this.#user = user;
   }
 
@@ -63,17 +64,11 @@ export class AchievementPhotoController implements Controller {
     res.status(204).end();
   }
 
-  async serve(userId: UserId, filename: string | undefined, res: FileResponse): Promise<void> {
-    if (filename === undefined || !FILENAME.test(filename) || !(await this.#photos.canServe(userId, filename))) {
-      throw this.#photoNotFound();
-    }
-    await new Promise<void>((resolve, reject) => {
-      res.sendFile(filename, { root: this.#directory, headers: SERVE_HEADERS }, (error) => {
-        if (error === undefined) resolve();
-        // 行はあるのにファイルがない（消し損ねの逆。data.md §6）も 404 にする
-        else reject(this.#photoNotFound());
-      });
-    });
+  async serve(userId: UserId, filename: string | undefined, res: PhotoResponse): Promise<void> {
+    const photo = filename === undefined || !FILENAME.test(filename) ? null : await this.#photos.open(userId, filename);
+    if (photo === null) throw this.#photoNotFound();
+    const headers = res.set({ ...SERVE_HEADERS, "Content-Type": photo.contentType });
+    headers.send(photo.bytes);
   }
 
   // 受け取りで起きるエラーは、大きすぎる・multipart として読めないなど、どれもリクエストの問題（メモリに受けるのでディスクは関係しない）

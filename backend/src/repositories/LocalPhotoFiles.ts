@@ -1,19 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { PhotoFiles } from "./PhotoFiles";
 
-export type PhotoExtension = "jpg" | "png" | "webp";
-
-export interface PhotoFiles {
-  // サーバーで決めた名前で保存し、その名前を返す
-  save(bytes: Buffer, extension: PhotoExtension): Promise<string>;
-  // すでにないファイルは失敗にしない
-  remove(filename: string): Promise<void>;
-  // 配信するフォルダ
-  directory(): string;
-}
-
-// 写真をフォルダ（UPLOAD_DIR）に置く。名前はサーバーで決める（パストラバーサル対策。api.md §5）
+// 写真をフォルダ（UPLOAD_DIR）に置く（手元と CI。api.md §5）
 export class LocalPhotoFiles implements PhotoFiles {
   readonly #directory: string;
 
@@ -21,18 +11,23 @@ export class LocalPhotoFiles implements PhotoFiles {
     this.#directory = resolve(directory);
   }
 
-  async save(bytes: Buffer, extension: PhotoExtension): Promise<string> {
+  async save(bytes: Buffer): Promise<string> {
     await mkdir(this.#directory, { recursive: true });
-    const filename = `${randomUUID()}.${extension}`;
-    await writeFile(join(this.#directory, filename), bytes);
+    const filename = `${randomUUID()}.jpg`;
+    await writeFile(join(this.#directory, filename), bytes, { flag: "wx" });
     return filename;
+  }
+
+  async read(filename: string): Promise<Buffer | null> {
+    try {
+      return await readFile(join(this.#directory, filename));
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   async remove(filename: string): Promise<void> {
     await rm(join(this.#directory, filename), { force: true });
-  }
-
-  directory(): string {
-    return this.#directory;
   }
 }
