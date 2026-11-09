@@ -92,7 +92,7 @@ push と PR ごとに次を実行する。どれかが失敗したら PR はマ�
 9. PR の検査（process.md の「詰まった点と再発防止策」欄、目標値を変えたときの decisions の有無）
 10. 結果をジョブサマリーと `metrics-report.json` に出す
 
-main に入ったときだけ、別のワークフロー（`.github/workflows/deploy.yml`）が、8 のイメージを Artifact Registry に置き、確認用にマイグレーションして出す。本番へは、同じイメージを Environment `production` の承認のあとで出す（architecture.md §4.1）。
+main に入ったときだけ、別のワークフロー（`.github/workflows/deploy.yml`）が、8 のイメージを Artifact Registry に置き、確認用にマイグレーションして出す。本番へは、自分が `workflow_dispatch` で起動したときに、選んだ main のコミットのイメージを作り直さずに出す（architecture.md §4.1。docs/decisions/0055）。
 
 ## 7. 他人のデータが見えないこと（docs/decisions/0046）
 他人のデータが見えないことは、文章の注意ではなく、次の 3 つで機械的に確かめる。どれかが欠けたら CI が落ちる（metrics.md §2）。

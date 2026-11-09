@@ -41,7 +41,7 @@ ToDo のような義務ではなく、やってもいいし、やらなくても
 - アプリ自体に AI の機能は載せない（「AI に相談」は相談文のコピーだけ）
 - 動作環境: スマホのブラウザが主（PC でも使える）。独自ドメインの Web アプリで、PWA としてホーム画面に追加できる。ストアには出さない（docs/decisions/0032）
 - 置き場所: Google Cloud の東京リージョン（Cloud Run・Cloud SQL for PostgreSQL・Cloud Storage）。月の費用は 3,000 円まで（architecture.md §4。docs/decisions/0035）
-- ソースは GitHub（private）に置き、テストと計測は GitHub Actions で実行する。main に入ったら確認用の環境に出し、本番は承認してから出す（docs/decisions/0036）
+- ソースは GitHub（private）に置き、テストと計測は GitHub Actions で実行する。main に入ったら確認用の環境に出し、本番へは自分が手で起動したときだけ出す（docs/decisions/0036・0055）
 - 預かるデータは個人情報として扱い、プライバシーポリシーを置く（docs/decisions/0039）
 
 ### 1.3 構成

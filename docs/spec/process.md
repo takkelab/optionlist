@@ -146,7 +146,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
 ### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036）
 - `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
 - `npm run infra:check -- <env>`（architecture.md §4.1 の設定を gcloud で読んで確かめる）
-- `.github/workflows/deploy.yml`（main で確認用へ、Environment `production` の承認で本番へ。同じイメージ）
+- `.github/workflows/deploy.yml`（main で確認用へ、`workflow_dispatch` を自分で起動して本番へ。同じイメージ。docs/decisions/0055）
 - アクセスのログ（Cloud Logging の `_Default` などのバケット）の保存場所を決める。国内（asia-northeast1）に置けなければ、プライバシーポリシーの「預け先」を直す（docs/decisions/0052）
 - 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
 - 完了の条件

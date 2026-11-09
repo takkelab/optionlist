@@ -134,11 +134,11 @@ optionlist-web/
 | 手元 | Windows（`npm run dev`） | Windows に直接入れた PostgreSQL 17 | `LocalPhotoFiles` | — |
 | CI | GitHub Actions | `postgres:17` のサービスコンテナ | `LocalPhotoFiles`（一時フォルダ）。`GcsPhotoFiles` のテストは fake-gcs-server | push・PR ごと |
 | 確認用 | Cloud Run `optionlist-staging`（最小 0 台・最大 2 台） | 共用の Cloud SQL の `optionlist_staging` | Cloud Storage `optionlist-staging-photos` | main に入ったら自動 |
-| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）＋独自ドメイン | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | GitHub の Environment `production` で承認してから |
+| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）＋独自ドメイン | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | 自分が `deploy.yml` を手で起動したとき（`workflow_dispatch`。docs/decisions/0055） |
 
 - 地域はすべて `asia-northeast1`（東京）。API と DB を同じ地域に置く
 - 確認用と本番は、同じイメージ（同じダイジェスト）を出す。イメージは main に入ったときに 1 回だけ作り、Artifact Registry に置く
-- GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）
+- GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）。本番のデプロイ用のサービスアカウントは、このリポジトリの `deploy.yml` を main から `workflow_dispatch` で起動したときにしか使えない条件にする（docs/decisions/0055）
 - 出す前に、Cloud Run Job（`optionlist-<env>-migrate`）で `ol_migrator` としてマイグレーションを流す。失敗したら、新しいイメージは出さない
 - Cloud Run のサービスアカウントは環境ごとに分け、自分の環境の入れ物・秘密の値・Cloud SQL の接続だけを許す
 - 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、ロールに BYPASSRLS がないこと、予算のアラート）
