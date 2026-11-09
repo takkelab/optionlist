@@ -134,14 +134,16 @@ optionlist-web/
 | 手元 | Windows（`npm run dev`） | Windows に直接入れた PostgreSQL 17 | `LocalPhotoFiles` | — |
 | CI | GitHub Actions | `postgres:17` のサービスコンテナ | `LocalPhotoFiles`（一時フォルダ）。`GcsPhotoFiles` のテストは fake-gcs-server | push・PR ごと |
 | 確認用 | Cloud Run `optionlist-staging`（最小 0 台・最大 2 台） | 共用の Cloud SQL の `optionlist_staging` | Cloud Storage `optionlist-staging-photos` | main に入ったら自動 |
-| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）＋独自ドメイン | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | 自分が `deploy.yml` を手で起動したとき（`workflow_dispatch`。docs/decisions/0055） |
+| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）。独自ドメインは R11 でつなぐ（それまでは Cloud Run の URL。docs/decisions/0057） | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | 自分が `deploy.yml` を手で起動したとき（`workflow_dispatch`。docs/decisions/0055） |
 
 - 地域はすべて `asia-northeast1`（東京）。API と DB を同じ地域に置く
 - 確認用と本番は、同じイメージ（同じダイジェスト）を出す。イメージは main に入ったときに 1 回だけ作り、Artifact Registry に置く
 - GitHub Actions から Google Cloud へは Workload Identity Federation で入る（サービスアカウントの鍵を置かない）。デプロイ用のサービスアカウントは、`repository_id`・`repository_owner_id`・`workflow_ref`（`deploy.yml` の main）と `event_name` で縛り、確認用は `push`、本番は `workflow_dispatch` のときにしか使えないようにする。本番には、確認用の Cloud Run でトラフィックを 100% 受けているリビジョンのイメージをダイジェストで出す。そのため本番のデプロイ用のサービスアカウントは、確認用の Cloud Run サービスと Artifact Registry の読み取りだけを、環境をまたいで持つ。`GITHUB_TOKEN` の既定の権限は読み取りだけにし、どのワークフローにも `actions: write`・`write-all` を与えない（docs/decisions/0055）
-- 出す前に、Cloud Run Job（`optionlist-<env>-migrate`）で `ol_migrator` としてマイグレーションを流す。失敗したら、新しいイメージは出さない
+- 出す前に、Cloud Run Job（`optionlist-<env>-migrate`）で `ol_migrator` としてマイグレーションを流す。失敗したら、新しいイメージは出さない。Job は、出すものと同じイメージ（同じダイジェスト）で `dbmate --no-dump-schema --migrations-dir db/migrations migrate` を流す（DB を作らない。やり直さない。docs/decisions/0057）
+- 共用の Cloud SQL は `takkelab-pg`（PostgreSQL 17、Enterprise の db-f1-micro）。Cloud Run からは Unix ソケット（`--add-cloudsql-instances`）でつなぎ、手元（`infra:setup`・`infra:check`）からは Cloud SQL Auth Proxy でつなぐ。承認済みのネットワークは置かず、暗号化した接続だけを受け付ける。DB のログイン用のロールは環境ごとに分ける（data.md §4。docs/decisions/0056）
+- アクセスのログ（Cloud Run のリクエストのログ）は、`_Default` のシンクの行き先を東京（asia-northeast1）のログのバケットにして、国内に置く（docs/decisions/0052・0057）
 - Cloud Run のサービスアカウントは環境ごとに分け、自分の環境の入れ物・秘密の値・Cloud SQL の接続だけを許す
-- 環境の設定は `infra/` の gcloud のスクリプトで作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数、入れ物の公開アクセスの防止と soft delete、サービスアカウントの権限、デプロイ用のサービスアカウントの Workload Identity Federation の条件と、本番のデプロイ用のサービスアカウントの確認用への権限が読み取りだけであること、ロールに BYPASSRLS がないこと、予算のアラート）。`staging`・`production` では、`GITHUB_TOKEN` の既定の権限が `read` で、`.github/workflows/` に `actions: write`・`write-all` がないことも確かめる（docs/decisions/0055）
+- 環境の設定は `infra/` の gcloud のスクリプト（`npm run infra:setup -- <apis|instance|shared|db <env>|env <env>>`。何度流しても同じ結果になる。名前と値は `infra/config.ts`）で作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数〈サービスの単位とリビジョンの単位の両方〉、入れ物の公開アクセスの防止と soft delete〈soft delete は R10 から〉、秘密の値の置き場所、サービスアカウントの権限、DB の持ち主と CONNECT、デプロイ用のサービスアカウントの Workload Identity Federation の条件と、本番のデプロイ用のサービスアカウントの確認用への権限が読み取りだけであること、ロールに BYPASSRLS がないこと、予算のアラート〈R10 から〉）。`staging`・`production` では、`GITHUB_TOKEN` の既定の権限が `read` で、main の `.github/workflows/` に `actions: write`・`write-all` がないことも確かめる（docs/decisions/0055）。`instance` では、あわせてアクセスのログの行き先（東京のバケット）と、管理用のパスワードの秘密の値に誰の権限も付いていないことを確かめる（docs/decisions/0057）
 
 ### 4.2 環境変数と秘密の値
 | 名前 | 内容 | 置き場所（確認用・本番） |
@@ -149,8 +151,8 @@ optionlist-web/
 | `PORT` | 待ち受けるポート | Cloud Run が入れる |
 | `APP_ENV` | `development` / `test` / `staging` / `production` | Cloud Run の環境変数 |
 | `APP_ORIGIN` | 自分のオリジン（`https://…`。Origin の確認に使う） | Cloud Run の環境変数 |
-| `APP_DATABASE_URL` | `ol_app` での接続先 | Secret Manager |
-| `DATABASE_URL` | `ol_migrator` での接続先（マイグレーションの Job だけ） | Secret Manager |
+| `APP_DATABASE_URL` | `ol_app` での接続先（確認用・本番は `ol_app_<env>`。`postgres://ol_app_<env>:…@/optionlist_<env>?host=/cloudsql/<接続名>&sslmode=disable`） | Secret Manager |
+| `DATABASE_URL` | `ol_migrator` での接続先（マイグレーションの Job だけ。確認用・本番は `ol_migrator_<env>` で、同じ形） | Secret Manager |
 | `CLEANUP_DATABASE_URL` | `ol_cleanup` での接続先（削除のジョブだけ） | Secret Manager |
 | `PHOTO_BUCKET` | 写真の入れ物の名前（なければ `UPLOAD_DIR` の `LocalPhotoFiles`） | Cloud Run の環境変数 |
 | `METRICS_TOKEN` | `/api/metrics` のトークン | Secret Manager |

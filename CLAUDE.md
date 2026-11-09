@@ -29,6 +29,8 @@
 - 品質チェックスクリプト自体のテスト: `npm run test:scripts`
 - 利用状況（metrics.md §6。達成数・frontend のエラー数など）: `npm run metrics:usage`（`backend/.env` の DB を読むだけ）
 - 手元で `/api/metrics` を見る: `backend/.env` に `METRICS_TOKEN` を書いて起動し、`curl -H "Authorization: Bearer <トークン>" http://localhost:8000/api/metrics`（トークンがない・違うと 404。docs/decisions/0038）
+- 確認用・本番の環境（Google Cloud のプロジェクト takkelab-apps。ID などの値は `infra/config.ts`）: `npm run infra:setup -- <apis|instance|shared|db <env>|env <env>> [--dry-run]` で作り（何度流しても同じ結果。名前と値は `infra/config.ts`）、`npm run infra:check -- <instance|staging|production>` で確かめる。どちらも gcloud にログインしていることと、Cloud SQL Auth Proxy（`gcloud components install cloud-sql-proxy`）が要る。有料のリソースを作るので、流す前に `--dry-run` で見せて確かめる（docs/decisions/0057）
+- デプロイ: main に入ると `.github/workflows/deploy.yml` が確認用へ出す。本番へは Actions の画面から Deploy を `workflow_dispatch` で起動する（確認用でトラフィックを 100% 受けているイメージを出す。docs/decisions/0055）
 - PR のマージ: `npm run pr:merge -- <PR 番号>`（CI の `quality`・`pr-check`・`image` が緑のときだけマージする。その PR のブランチへ積んだ PR は、マージの前に向き先を付け替える。`gh pr merge` は使わない）
 
 # Gotchas

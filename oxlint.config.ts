@@ -3,6 +3,7 @@ import { DESIGN_RULES } from "./tools/lint-rules/design-rules.ts";
 
 // architecture.md §2 のコード設計ルール（L1〜L12）。ルールの一覧は tools/lint-rules/design-rules.ts
 // 対象はアプリのコード（backend・frontend・shared・e2e）。scripts/ と tools/ はハーネス側なので対象外（docs/decisions/0005）
+// infra/（環境を作る gcloud のスクリプト）も同じく運用の道具なので対象外（docs/decisions/0057）
 // L11（無効化コメント）は lint では止めず、npm run metrics:check が全体を見る
 // テストファイルそのものだけ。tests/fakes/ のフェイクや e2e のページオブジェクトは通常のルールで見る
 const TEST_FILES = ["**/*.test.ts", "**/*.test.tsx", "e2e/**/*.spec.ts"];
@@ -41,7 +42,7 @@ const frontendLayer = (forbidden: string[], withAxios: boolean): FrontendRule =>
 export default defineConfig({
   plugins: ["typescript", "oxc", "react"],
   jsPlugins: ["./tools/lint-rules/plugin.ts"],
-  ignorePatterns: ["oxlint.config.ts", "scripts/**", "tools/**", "**/dist/**", "**/coverage/**", "**/db/migrations/**"],
+  ignorePatterns: ["oxlint.config.ts", "scripts/**", "tools/**", "infra/**", "**/dist/**", "**/coverage/**", "**/db/migrations/**"],
   rules: DESIGN_RULES,
   overrides: [
     {

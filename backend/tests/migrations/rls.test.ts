@@ -113,25 +113,62 @@ describe("rls-checks.sql", () => {
       ["SET ROLE ol_definer", "ALTER FUNCTION auth_find_user(bytea) SECURITY INVOKER", "RESET ROLE"],
     ],
     ["auth_functions_execute_only_by_app", "migrator", ["SET ROLE ol_definer", "GRANT EXECUTE ON FUNCTION auth_find_user(bytea) TO PUBLIC", "RESET ROLE"]],
+    ["env_logins_hold_no_privileges", "admin", ["CREATE ROLE ol_app_staging LOGIN", "GRANT SELECT ON options TO ol_app_staging"]],
   ];
 
-  it("injects a violation into every check", () => {
-    expect(injected.map(([name]) => name).toSorted()).toEqual(checks.map(([name]) => name).toSorted());
-  });
+  // 確認用・本番のログイン用のロール（docs/decisions/0056）の誤った付け方
+  const injectedEnvLogins: [string, string, string[]][] = [
+    ["strong_role_memberships", "ol_migrator_staging が INHERIT", ["CREATE ROLE ol_migrator_staging LOGIN", "GRANT ol_migrator TO ol_migrator_staging WITH INHERIT TRUE, SET FALSE"]],
+    ["strong_role_memberships", "ほかの名前のロールが SET", ["CREATE ROLE ol_app_staging LOGIN", "GRANT ol_cleanup TO ol_app_staging WITH INHERIT FALSE, SET TRUE"]],
+    ["strong_role_memberships", "DB の持ち主に SET できる", ["CREATE ROLE ol_owner_production", "CREATE ROLE ol_migrator_staging LOGIN", "GRANT ol_owner_production TO ol_migrator_staging WITH INHERIT FALSE, SET TRUE"]],
+    ["strong_role_memberships", "環境の名前の違う SET",["CREATE ROLE ol_migrator_preview LOGIN", "GRANT ol_migrator TO ol_migrator_preview WITH INHERIT FALSE, SET TRUE"]],
+    ["app_is_not_a_member_of_other_roles", "ol_app_staging が ol_metrics のメンバー", ["CREATE ROLE ol_app_staging LOGIN", "GRANT ol_app TO ol_app_staging", "GRANT ol_metrics TO ol_app_staging"]],
+    ["app_owns_nothing", "ol_app_production が表の持ち主", ["CREATE ROLE ol_app_production LOGIN", "CREATE TABLE stray (id int)", "ALTER TABLE stray OWNER TO ol_app_production"]],
+    ["auth_functions_execute_only_by_app", "ol_metrics_staging が ol_app を引き継ぐ", ["CREATE ROLE ol_metrics_staging LOGIN", "GRANT ol_app TO ol_metrics_staging"]],
+  ];
 
-  it.each(injected)("%s finds an injected violation", async (name, as, statements) => {
-    const [, check = ""] = checks.find(([checkName]) => checkName === name) ?? [];
+  const violationsAfter = async (as: "migrator" | "admin", statements: string[], check: string): Promise<unknown[]> => {
     const client = new pg.Client({ connectionString: (as === "admin" ? adminUrl : migratorUrl).toString() });
     await client.connect();
     try {
       await client.query("BEGIN");
       for (const statement of statements) await client.query(statement);
       const { rows } = await client.query(check);
-      expect(rows.length).toBeGreaterThan(0);
+      return rows;
     } finally {
       await client.query("ROLLBACK");
       await client.end();
     }
+  };
+  const checksByName = new Map(checks);
+  const checkNamed = (name: string): string => checksByName.get(name) ?? "";
+
+  it("injects a violation into every check", () => {
+    expect(injected.map(([name]) => name).toSorted()).toEqual(checks.map(([name]) => name).toSorted());
+  });
+
+  it.each(injected)("%s finds an injected violation", async (name, as, statements) => {
+    expect((await violationsAfter(as, statements, checkNamed(name))).length).toBeGreaterThan(0);
+  });
+
+  it.each(injectedEnvLogins)("%s finds an env login violation（%s）", async (name, _label, statements) => {
+    expect((await violationsAfter("admin", statements, checkNamed(name))).length).toBeGreaterThan(0);
+  });
+
+  // db:roles:cloud（RoleSetup の env）が作る形。どの検査も 0 行のまま（docs/decisions/0056）
+  it.each(checks)("%s accepts the env login roles from db:roles:cloud", async (_name, check) => {
+    const statements = ["staging", "production"].flatMap((env) => [
+      `CREATE ROLE ol_owner_${env}`,
+      `CREATE ROLE ol_migrator_${env} LOGIN`,
+      `GRANT ol_migrator TO ol_migrator_${env} WITH INHERIT FALSE, SET TRUE`,
+      `CREATE ROLE ol_cleanup_${env} LOGIN`,
+      `GRANT ol_cleanup TO ol_cleanup_${env} WITH INHERIT FALSE, SET TRUE`,
+      `CREATE ROLE ol_app_${env} LOGIN`,
+      `GRANT ol_app TO ol_app_${env} WITH INHERIT TRUE, SET FALSE`,
+      `CREATE ROLE ol_metrics_${env} LOGIN`,
+      `GRANT ol_metrics TO ol_metrics_${env} WITH INHERIT TRUE, SET FALSE`,
+    ]);
+    expect(await violationsAfter("admin", statements, check)).toEqual([]);
   });
 });
 
