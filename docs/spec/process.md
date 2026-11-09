@@ -143,15 +143,16 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `docker build -t optionlist:local .` が通る（CI の中で）
   - `npm run smoke:image -- optionlist:local` が通る（`/api/health` が 200、`/` に CSP と `X-Robots-Tag: noindex` が付き、本文に noindex の meta が入る、`PUBLIC_INDEXING=true` で起動し直すとヘッダーも meta も消える、`/api/metrics` がトークンなしで 404、`/suggestions/1` が `index.html` を返す）
 
-### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036）
+### R8. 確認用・本番の環境と自動デプロイ（docs/decisions/0035・0036・0055）
 - `infra/` の gcloud のスクリプト（Cloud SQL の共用インスタンス、DB とロール、入れ物、サービスアカウント、Secret Manager、Artifact Registry、Cloud Run のサービスとマイグレーションの Job、ドメインマッピング、Workload Identity Federation）
 - `npm run infra:check -- <env>`（architecture.md §4.1 の設定を gcloud で読んで確かめる）
-- `.github/workflows/deploy.yml`（main で確認用へ、Environment `production` の承認で本番へ。同じイメージ）
+- `.github/workflows/deploy.yml`（main で確認用へ、`workflow_dispatch` を自分で起動して、確認用でトラフィックを 100% 受けているリビジョンのイメージをダイジェストで本番へ。docs/decisions/0055）
 - アクセスのログ（Cloud Logging の `_Default` などのバケット）の保存場所を決める。国内（asia-northeast1）に置けなければ、プライバシーポリシーの「預け先」を直す（docs/decisions/0052）
 - 実際の請求の見込みを確かめ、docs/decisions/ に新しい記録を書く（docs/decisions/0035）。ドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）
 - 完了の条件
   - 共通の条件
   - `npm run infra:check -- instance`・`npm run infra:check -- staging`・`npm run infra:check -- production` が終了コード 0（`instance` は共用の Cloud SQL のインスタンスの設定、環境はその環境のサービス・DB・入れ物の設定。各環境の DB で、testing.md §7 の 2 のロールとポリシーの確かめ〈BYPASSRLS がない、`ol_app`・`PUBLIC` 宛てのポリシーが各表 1 本で決まった式だけ、`ol_app` がほかの `ol_*` のメンバーでない、`USING (true)` が許可したロールにしかない〉と同じ SQL を流す。マイグレーションのテストと同じ SQL のファイル〈`backend/db/checks/rls-checks.sql`〉を使う）
+  - `npm run infra:check -- staging`・`production` が、デプロイ用のサービスアカウントの Workload Identity Federation の条件（`repository_id`・`repository_owner_id`・`workflow_ref`・`event_name`。docs/decisions/0055）と、`GITHUB_TOKEN` の既定の権限が `read`・`.github/workflows/` に `actions: write`・`write-all` がないこと、本番のデプロイ用のサービスアカウントの確認用への権限が読み取りだけであることも確かめる
   - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
   - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
   - `git grep -n -E "private_key|BEGIN (RSA )?PRIVATE KEY" -- . ":!docs"` が 0 件（鍵をリポジトリに置いていない。この行のような文書は除く）

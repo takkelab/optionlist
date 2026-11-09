@@ -66,7 +66,7 @@
 | [0033](0033-anonymous-account.md) | ログイン画面を置かず、端末ごとの匿名アカウントと復旧コードにする | 確定 |
 | [0034](0034-postgres-rls.md) | MySQL から Postgres に移り、user_id での絞り込みと RLS を両方使う | 確定 |
 | [0035](0035-hosting-and-cost.md) | Cloud Run（東京）＋Cloud SQL（共用の 1 台）＋Cloud Storage に置き、月 3,000 円までに収める | 確定（費用は R8 で実額を確かめる） |
-| [0036](0036-environments-and-deploy.md) | 環境を手元・CI・確認用・本番の 4 つに分け、本番は承認してから出す | 確定 |
+| [0036](0036-environments-and-deploy.md) | 環境を手元・CI・確認用・本番の 4 つに分け、本番は承認してから出す | 一部置き換え（本番の出し方は 0055） |
 | [0037](0037-private-photos.md) | 写真は非公開の入れ物に置き、backend が持ち主を確かめてから配る。backend でも作り直して EXIF を消す | 確定（上限の値は使って見直す） |
 | [0038](0038-security-baseline.md) | 公開に向けたセキュリティの土台（CSRF・CSP・回数の制限・metrics・連番 ID） | 確定（回数の制限の値は使って見直す） |
 | [0039](0039-privacy-policy.md) | 個人情報として扱い、プライバシーポリシー・利用規約と「すべてのデータを消す」を置く | 一部置き換え（リンクの置き場所は 0053）。文面は公開前に見直す |
@@ -85,3 +85,4 @@
 | [0052](0052-pwa-legal-details.md) | PWA とポリシー・規約のページの細部（虹の輪のアイコン、画面の移動は通信を先に、オフラインのトースト、E2E は SW を止める） | 確定（問い合わせ先は R11 で差し替える） |
 | [0053](0053-policy-link-placement.md) | ポリシーへのリンクは、＋の追加ダイアログと設定のシートに置く（提案からの追加には出さない） | 確定 |
 | [0054](0054-container-details.md) | 本番用のコンテナの細部（tsx で実行、FRONTEND_DIST、スモークテストの DB 接続、CI の image ジョブ） | 確定 |
+| [0055](0055-production-deploy-by-dispatch.md) | 本番へは、GitHub の承認ではなく、自分で手で起動するワークフローで出す | 確定 |
