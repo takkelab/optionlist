@@ -1,5 +1,6 @@
 import { createContext } from 'react'
-import type { OptionsApi, SuggestionsApi } from '../api/client'
+import type { AccountApi, OptionsApi, SuggestionsApi } from '../api/client'
+import type { AccountMemo } from '../lib/AccountMemory'
 import type { CatalogLoader } from '../lib/CatalogCache'
 import type { ListLoader } from '../lib/ListPrefetch'
 import type { ScrollMemory } from '../lib/ScrollMemory'
@@ -21,3 +22,19 @@ export const SuggestionsApiContext = createContext<SuggestionsApi | null>(null)
 export const CatalogLoaderContext = createContext<CatalogLoader | null>(null)
 // 戻ったときのスクロール位置（探す画面・タグの一覧）
 export const ScrollMemoryContext = createContext<ScrollMemory | null>(null)
+
+// アカウントが入れ替わった（引き継いだ・すべて消した）ことを、一覧に伝える（screens.md §9）
+export interface AccountChanges {
+  // 入れ替わった回数。一覧はこれが変わったら読み直す
+  version: number
+  // 覚えている一覧・提案を捨てて、version を進める
+  changed(): void
+  // 復旧コードを発行した回数。勧めるカード（やりたいリスト）が、設定のシートで発行されたことを知って消えるため
+  issues: number
+  issued(): void
+}
+
+export const AccountApiContext = createContext<AccountApi | null>(null)
+// 端末に覚えておく値（勧めるカードに答えたかなど）
+export const AccountMemoContext = createContext<AccountMemo | null>(null)
+export const AccountChangesContext = createContext<AccountChanges | null>(null)

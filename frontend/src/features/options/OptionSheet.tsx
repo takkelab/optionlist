@@ -1,15 +1,15 @@
 import { useCallback, useState } from 'react'
-import type { MouseEvent, TouchEvent } from 'react'
+import type { MouseEvent } from 'react'
 import type { Option } from '../../../../shared/types'
 import sheet from '../../components/Sheet.module.css'
 import { useBackToClose } from '../../components/useBackToClose'
 import { useModal } from '../../components/useModal'
 import { useRetained } from '../../components/useRetained'
+import { useSheetSwipe } from '../../components/useSheetSwipe'
+import type { SheetTouch } from '../../components/useSheetSwipe'
 import { AchievementLabel } from '../../lib/AchievementLabel'
 import type { ListActions } from '../../lib/OptionListActions'
 import { PlannedDateLabel } from '../../lib/PlannedDateLabel'
-import { SheetSwipe } from '../../lib/SheetSwipe'
-import type { SwipeState } from '../../lib/SheetSwipe'
 import { AchievementHistory } from './AchievementHistory'
 import { CompletionActions } from './completion/CompletionActions'
 import { ConsultButton } from './ConsultButton'
@@ -25,7 +25,6 @@ import { useOptionDetail } from './useOptionDetail'
 const achievements = new AchievementLabel()
 const dates = new PlannedDateLabel()
 const STATUS_LABEL = { pending: 'やりたい', completed: 'やった' } as const
-const swipe = new SheetSwipe()
 
 // どこから開いたか。list: やりたいリスト・やったリストのカード / added: 提案を追加した直後 / reopened: 提案 1 件の画面のボタンから開き直した
 export type SheetOrigin = 'list' | 'added' | 'reopened'
@@ -53,54 +52,18 @@ export function OptionSheet({ option, onClose, actions, origin = 'list', firstSt
   const [photoRound, setPhotoRound] = useState(0)
   const photoChanged = useCallback(() => setPhotoRound((changes) => changes + 1), [])
   const photos = usePhotoSave(shown === null ? null : shown.id, actions, photoChanged)
-  // 下へスワイプしている間は、シートごと指に付いて下がる（screens.md §3）。null なら指を置いていない
-  const [drag, setDrag] = useState<SwipeState | null>(null)
-  const [wasOpen, setWasOpen] = useState(open)
-  // 開いた回数。閉じたあとも中身を残すので、開くたびに中身を作り直す（カレンダーの月や確認の状態を持ち越さない）
-  const [round, setRound] = useState(0)
-  // 閉じるときは引いた位置のまま残し、そこから下へ滑らせる（Sheet.module.css）。次に開くときに戻す
-  if (open !== wasOpen) {
-    setWasOpen(open)
-    if (open) {
-      setDrag(null)
-      setRound(round + 1)
-    }
-  }
+  // 下へスワイプして閉じる（screens.md §3）。round は開いた回数で、開くたびに中身を作り直す（カレンダーの月や確認の状態を持ち越さない）
+  const { round, style, touch } = useSheetSwipe(open, onClose)
   // シートの外（背景）を押したら閉じる。中身はシートいっぱいに広げてあるので、dialog そのものが押されたら外
   const closeOutside = (event: MouseEvent<HTMLDialogElement>) => {
     const { target, currentTarget } = event
     if (target === currentTarget) onClose()
   }
-  // 重ねて開いた dialog（AI に相談・削除の確認）の中のタッチは、DOM の親のこのシートにも届くので引かない。
-  // 持ち手から始めたときは、中身をスクロールしていても引く（持ち手はスクロールしない）
-  const touchStart = (event: TouchEvent<HTMLDivElement>) => {
-    const { touches, timeStamp, target, currentTarget } = event
-    const touch = touches.item(0)
-    if (touch === null || !(target instanceof Element) || target.closest('dialog') !== currentTarget.closest('dialog')) return
-    const fromGrip = target.closest('[data-grip]') !== null
-    setDrag(swipe.start({ x: touch.clientX, y: touch.clientY, at: timeStamp }, fromGrip))
-  }
-  // 中身のスクロールの位置を見て、引くかスクロールに任せるかを決める
-  const touchMove = (event: TouchEvent<HTMLDivElement>) => {
-    const { touches, timeStamp, currentTarget } = event
-    const touch = touches.item(0)
-    if (touch === null || drag === null) return
-    const { scrollTop } = currentTarget
-    setDrag(swipe.move(drag, { x: touch.clientX, y: touch.clientY, at: timeStamp }, scrollTop))
-  }
-  // 閉じないときは引いた量を消し、元の位置へ滑って戻す（Sheet.module.css の transition）
-  const touchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const { timeStamp } = event
-    if (drag !== null && swipe.closes(drag, timeStamp)) onClose()
-    else setDrag(null)
-  }
-  const pulling = drag !== null && drag.from !== null
-  const touch = { onTouchStart: touchStart, onTouchMove: touchMove, onTouchEnd: touchEnd, onTouchCancel: () => setDrag(null) }
   return (
     <dialog
       {...modal}
       className={`${sheet.sheet} ${styles.tall}`}
-      style={pulling ? { transform: `translateY(${drag.by}px)`, transition: 'none' } : undefined}
+      style={style}
       aria-label="項目のシート"
       onClick={closeOutside}
     >
@@ -122,18 +85,10 @@ export function OptionSheet({ option, onClose, actions, origin = 'list', firstSt
   )
 }
 
-// シートの中身のタッチの扱い（OptionSheet が持つ）
-type TouchHandlers = {
-  onTouchStart: (event: TouchEvent<HTMLDivElement>) => void
-  onTouchMove: (event: TouchEvent<HTMLDivElement>) => void
-  onTouchEnd: (event: TouchEvent<HTMLDivElement>) => void
-  onTouchCancel: () => void
-}
-
 type BodyProps = Omit<Props, 'option' | 'origin' | 'firstStep'> & {
   option: Option
   active: boolean
-  touch: TouchHandlers
+  touch: SheetTouch
   origin: SheetOrigin
   firstStep: string | null
   photos: PhotoSave
@@ -149,9 +104,9 @@ function SheetBody({ option, active, touch, onClose, actions, origin, firstStep:
   const justFromSuggestion = origin !== 'list' && option.status === 'pending'
 
   return (
-    <div className={styles.body} {...touch}>
-      <div className={styles.grip} data-grip>
-        <span className={styles.handle} aria-hidden="true" />
+    <div className={sheet.body} {...touch}>
+      <div className={sheet.grip} data-grip>
+        <span className={sheet.handle} aria-hidden="true" />
       </div>
       {origin !== 'list' && <SheetNotice option={option} origin={origin} actions={actions} onClose={onClose} />}
       <TitleField title={title} onSave={(next) => actions.update(id, { title: next }, 'タイトルを保存できませんでした')} />

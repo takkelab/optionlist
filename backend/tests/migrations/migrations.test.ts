@@ -22,17 +22,29 @@ const all = new DbmateCli(url.toString(), MIGRATIONS_DIR);
 const stepDir = mkdtempSync(join(tmpdir(), "optionlist-migrations-"));
 const stepwise = new DbmateCli(url.toString(), stepDir);
 
-const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], rowCounts: [] };
+// DB を消して作り直す前準備。手元で npm test の直後に流すと 10 秒（既定）を超えることがある
+const HOOK_TIMEOUT_MS = 60_000;
+const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], functions: [], rowCounts: [] };
 
 afterAll(async () => {
   await all.drop();
   rmSync(stepDir, { recursive: true, force: true });
 });
 
+// 版（ファイル名の先頭の日時。UTC）を手で未来の時刻にすると、あとで db:new が付ける今の時刻の版がその前に並び、
+// 新しいマイグレーションが古いものより先に流れる（docs/harness/incidents.md #21）
+describe("migration versions", () => {
+  it.each(files)("%s is not dated in the future", (file) => {
+    const version = file.slice(0, 14);
+    const now = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    expect(version <= now).toBe(true);
+  });
+});
+
 describe("all migrations", () => {
   beforeAll(async () => {
     await all.drop();
-  });
+  }, HOOK_TIMEOUT_MS);
 
   it("run up -> down -> up on an empty database", async () => {
     await all.up();
@@ -49,7 +61,7 @@ describe("each migration", () => {
   beforeAll(async () => {
     await all.drop();
     await all.create();
-  });
+  }, HOOK_TIMEOUT_MS);
 
   // 前のケースの up が済んでいる前提で順に流す（vitest は 1 ファイル内のケースを順に実行する）
   it.each(files)("%s: down reverts what up changed", async (file) => {
@@ -61,14 +73,15 @@ describe("each migration", () => {
     await stepwise.rollback();
     expect(await snapshot.take()).toEqual(state);
     await stepwise.up();
-  });
+    // スナップショットを 3 回取り、dbmate を 3 回動かす。手元で全体を流すと 5 秒（既定）を超える（単独では 3〜4 秒）
+  }, 30_000);
 });
 
 describe("schema after all migrations", () => {
   beforeAll(async () => {
     await all.drop();
     await all.up();
-  });
+  }, HOOK_TIMEOUT_MS);
 
   it("has the tables and columns in data.md §2", async () => {
     const { columns } = await snapshot.take();
@@ -166,6 +179,16 @@ describe("schema after all migrations", () => {
       "options.chk_options_status CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text])))",
       "suggestions.chk_suggestions_season CHECK ((((season_from IS NULL) AND (season_to IS NULL)) OR ((season_from IS NOT NULL) AND (season_to IS NOT NULL) AND ((season_from >= 1) AND (season_from <= 12)) AND ((season_to >= 1) AND (season_to <= 12)))))",
       "suggestions.chk_suggestions_size CHECK ((size = ANY (ARRAY['hour'::text, 'half_day'::text, 'day'::text, 'overnight'::text])))",
+    ]);
+  });
+
+  // 認証の関数（data.md §4）。持ち主は ol_definer で、SECURITY DEFINER
+  it("has the auth functions owned by ol_definer", async () => {
+    const { functions } = await snapshot.take();
+    expect(functions).toEqual([
+      "auth_create_user(p_session_hash bytea, p_ip_hash bytea) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer) OWNER ol_definer SECURITY DEFINER",
+      "auth_find_user(p_session_hash bytea) RETURNS TABLE(user_id bigint, last_seen_at timestamp with time zone) OWNER ol_definer SECURITY DEFINER",
+      "auth_restore(p_code_hash bytea, p_new_session_hash bytea, p_ip_hash bytea, p_current_user_id bigint, p_replace boolean) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer, local_item_count integer) OWNER ol_definer SECURITY DEFINER",
     ]);
   });
 

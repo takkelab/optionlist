@@ -57,6 +57,13 @@ export type SuggestionDetail = SuggestionSummary & {
   optionId: number | null;
 };
 
+// 今の端末のアカウントの状態（api.md §6）。hasRecoveryCode は使える復旧コードを発行済みか
+export type AccountStatus = { hasAccount: boolean; hasRecoveryCode: boolean; createdAt: string | null };
+// code は 4 文字ずつハイフンで区切った 16 文字（ABCD-EFGH-JKMN-PQRS）。この応答でしか返さない
+export type RecoveryCode = { code: string };
+// replace: この端末の別のアカウントを消して移ってよいか（確認のあとで true にして送り直す）
+export type RestoreRequest = { code: string; replace?: boolean };
+
 export type Event = {
   // screens.md §8。画面の閲覧などは送らない（docs/decisions/0031）
   type: "client_error";
@@ -68,3 +75,6 @@ export type ApiError = {
   // TOO_MANY_REQUESTS は回数の制限（api.md §6）。Retry-After のヘッダーが付く
   error: { code: "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL_ERROR"; message: string };
 };
+
+// POST /api/account/restore の 409。localItemCount はこの端末のアカウントの項目の件数（確認の文「やりたいこと（N 件）」に出す）
+export type RestoreConflict = ApiError & { localItemCount: number };

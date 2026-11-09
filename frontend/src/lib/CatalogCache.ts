@@ -8,6 +8,8 @@ export interface CatalogLoader {
   load(): Promise<SuggestionCatalog>
   // 提案 1 件を読んだとき・追加したときに、覚えている一覧の印（追加済み・やった）をそれに合わせる
   mark(id: number, status: OptionStatus | null): void
+  // 覚えている一覧と印を捨てる（アカウントが入れ替わったとき。前のアカウントの印を出さない）。それより前に読み始めたものでは埋めない
+  forget(): void
 }
 
 type Mark = { seq: number; id: number; status: OptionStatus | null }
@@ -52,6 +54,13 @@ export class CatalogCache implements CatalogLoader {
     this.#seq += 1
     this.#marks.push({ seq: this.#seq, id, status })
     if (this.#catalog !== null) this.#catalog = this.#marked(this.#catalog, id, status)
+  }
+
+  forget(): void {
+    this.#seq += 1
+    this.#catalog = null
+    this.#catalogSeq = this.#seq
+    this.#marks = []
   }
 
   // 状態が変わらなければ同じ一覧を返す（探す画面が同じ一覧を描き直さないように）

@@ -121,4 +121,23 @@ describe('CatalogCache', () => {
     expect(await older).toMatchObject({ themes: [{ name: '新しい' }] })
     expect(cache.cached()).toMatchObject({ themes: [{ name: '新しい' }] })
   })
+
+  // アカウントが入れ替わったら、前のアカウントの一覧も、その前に読み始めた結果も覚えない
+  it('forgets the catalog and ignores a load started before that', async () => {
+    const api = new ManualCatalogApi()
+    const cache = new CatalogCache(api)
+    const first = cache.load()
+    api.respond(0, '前の人', ['pending', null])
+    await first
+    const inFlight = cache.load()
+    cache.forget()
+    expect(cache.cached()).toBeNull()
+    api.respond(1, '前の人')
+    await inFlight
+    expect(cache.cached()).toBeNull()
+    const next = cache.load()
+    api.respond(2, '今の人')
+    await next
+    expect(cache.cached()).toMatchObject({ themes: [{ name: '今の人' }], suggestions: [{ optionStatus: null }, { optionStatus: null }] })
+  })
 })

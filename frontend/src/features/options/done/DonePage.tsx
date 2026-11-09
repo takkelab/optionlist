@@ -1,5 +1,6 @@
 import { CollapsingList } from '../../../components/CollapsingList'
 import { PageHeader } from '../../../components/PageHeader'
+import { SettingsButton } from '../../account/SettingsButton'
 import styles from '../OptionList.module.css'
 import { OptionSheet } from '../OptionSheet'
 import { StatusSwitch } from '../StatusSwitch'
@@ -14,7 +15,7 @@ export function DonePage() {
 
   return (
     <>
-      <PageHeader title="やったこと" center={<StatusSwitch />} />
+      <PageHeader title="やったこと" center={<StatusSwitch />} end={<SettingsButton />} />
       {options !== null && options.length === 0 && (
         <div className={styles.empty}>
           <p>🎉 を押して、やったことをここに集めよう</p>

@@ -9,6 +9,8 @@ export interface SessionCookieJar {
   // Cookie ヘッダーから鍵を読む。なければ null
   read(cookieHeader: string | undefined): string | null;
   write(res: CookieResponse, sessionKey: string): void;
+  // Cookie を消す（すべてのデータを消したとき。api.md §2）
+  clear(res: CookieResponse): void;
 }
 
 // Chrome は Cookie の期限を最長 400 日に切り詰める（api.md §6）
@@ -35,6 +37,11 @@ export class SessionCookie implements SessionCookieJar {
 
   write(res: CookieResponse, sessionKey: string): void {
     res.cookie(this.#name(), sessionKey, { httpOnly: true, secure: this.#secure, sameSite: "lax", path: "/", maxAge: MAX_AGE_MS });
+  }
+
+  // 同じ名前・属性で、空の値をすぐ切れる期限で上書きする（Max-Age=0）
+  clear(res: CookieResponse): void {
+    res.cookie(this.#name(), "", { httpOnly: true, secure: this.#secure, sameSite: "lax", path: "/", maxAge: 0 });
   }
 
   #name(): string {

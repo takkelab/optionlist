@@ -126,7 +126,7 @@ type RestoreConflict = ApiError & { localItemCount: number }
 - `auth_find_user` が返した `last_seen_at` が今日（日本時間の日付）でなければ、書いて、Cookie を `Max-Age` 400 日で入れ直す（Chrome は Cookie の期限を最長 400 日に切り詰めるため）
 - 復旧コード
   - `POST /api/account/recovery-code`: 新しいコードを作り、ハッシュを `users.recovery_code_hash` に入れ（前のものは上書きで使えなくなる）、平文はこの応答でだけ返す
-  - `POST /api/account/restore`: コードを正規化（data.md §3）してハッシュにし、`auth_restore` を呼ぶ。`status` が `ok` なら新しい鍵の Cookie を返し、`not_found` なら 404、`rate_limited` なら 429（`Retry-After`）。そのアカウントを使っていた端末の Cookie は、鍵が変わるので無効になる。今の端末に**別の**アカウントがあれば、移ったあとにその古いアカウントを消す（誰も開けなくなるため）。返った ID が今の端末のアカウントと同じ（自分のコードを自分の端末で入れた）ときは、何も消さない（Cookie だけが新しい鍵になる）
+  - `POST /api/account/restore`: コードを正規化（data.md §3）してハッシュにし、`auth_restore` を呼ぶ。`status` が `ok` なら新しい鍵の Cookie を返し、`not_found` なら 404、`rate_limited` なら 429（`Retry-After`）。そのアカウントを使っていた端末の Cookie は、鍵が変わるので無効になる。今の端末に**別の**アカウントがあれば、移ったあとにその古いアカウントを消す（誰も開けなくなるため）。古いアカウントを消せなくても、新しい鍵の Cookie を返して成功にし、失敗はログに出す（移った先の鍵はもう置き換わっているので、失敗にすると移った先のアカウントがどの端末からも開けなくなる。残った古いアカウントは削除のジョブが保存期間で消す。docs/decisions/0049）。返った ID が今の端末のアカウントと同じ（自分のコードを自分の端末で入れた）ときは、何も消さない（Cookie だけが新しい鍵になる）
   - 消す前の確認: 本文は `{ code, replace?: boolean }`。`replace` が true でなく、コードが合い、今の端末に**別の**アカウントがあって項目か達成が 1 件以上あるときは、コードを使わずに 409 `CONFLICT`（`{ error: { code: 'CONFLICT', message }, localItemCount: number }`）を返す。画面は確認（screens.md §9）のあとで `replace: true` を付けて送り直す。コードを使わない判定も `auth_restore` の中で行い、回数に数える（data.md §4。関数は `replace` を引数に取り、確認が要るときは `status` を `'needs_confirm'` にして、その端末の件数を数えるために今の人の ID も受け取る）
 - 回数の制限（超えたら 429。docs/decisions/0038）※仮決め
   - アカウントの作成: 1 つの IP から 1 時間に 20 件まで（DB の auth_attempts で数える）

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useNotifier } from '../../../app/hooks'
+import { useAccountMemo, useNotifier } from '../../../app/hooks'
 import type { ListActions } from '../../../lib/OptionListActions'
 import { BrowserPhotoShrinker } from './BrowserPhotoShrinker'
 
@@ -19,6 +19,7 @@ export type PhotoSave = {
 // optionId はシートに出している項目（まだ何も開いていなければ null で、呼ばれることはない）
 export function usePhotoSave(optionId: number | null, actions: ListActions, onChanged: () => void): PhotoSave {
   const notifier = useNotifier()
+  const memo = useAccountMemo()
   const [busy, setBusy] = useState(false)
   const savePhoto = useCallback<SavePhoto>(
     async (achievementId, file) => {
@@ -31,13 +32,17 @@ export function usePhotoSave(optionId: number | null, actions: ListActions, onCh
         })
         if (photo === null) return false
         const saved = await actions.setPhoto(optionId, achievementId, photo)
-        if (saved) onChanged()
+        if (saved) {
+          // 写真を初めて保存したら、復旧コードを控えるよう勧める（screens.md §9）
+          memo.markPhotoSaved()
+          onChanged()
+        }
         return saved
       } finally {
         setBusy(false)
       }
     },
-    [notifier, optionId, actions, onChanged],
+    [notifier, memo, optionId, actions, onChanged],
   )
   const removePhoto = useCallback(
     async (achievementId: number) => {

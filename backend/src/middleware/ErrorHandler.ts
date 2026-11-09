@@ -25,7 +25,7 @@ export class ErrorHandler implements ErrorMiddleware {
     if (error instanceof AppError) {
       const retryAfter = error.retryAfterSeconds();
       if (retryAfter !== null) res.setHeader("Retry-After", String(retryAfter));
-      res.status(error.status()).json(this.#body(error.code(), error.message));
+      res.status(error.status()).json({ ...error.extra(), ...this.#body(error.code(), error.message) });
       return;
     }
     if (this.#isClientError(error)) {

@@ -1,6 +1,8 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { AccountStore } from "../repositories/AccountRepository";
 import type { UserStore } from "../repositories/UserRepository";
+import { AccountHasher } from "./AccountHasher";
+import type { Hasher } from "./AccountHasher";
 import type { Clock } from "./Clock";
 import { AppError } from "./errors";
 
@@ -41,21 +43,20 @@ export class AccountService implements SessionResolver, AccountStarter {
   readonly #users: UserStore;
   readonly #clock: Clock;
   readonly #keys: SessionKeySource;
-  readonly #ipHashSecret: string;
+  readonly #hasher: Hasher;
 
   constructor(accounts: AccountStore, users: UserStore, clock: Clock, keys: SessionKeySource, ipHashSecret: string) {
-    if (ipHashSecret === "") throw new Error("IP_HASH_SECRET が未設定です。backend/.env.example を参考に設定してください");
     this.#accounts = accounts;
     this.#users = users;
     this.#clock = clock;
     this.#keys = keys;
-    this.#ipHashSecret = ipHashSecret;
+    this.#hasher = new AccountHasher(ipHashSecret);
   }
 
   // 形の違う鍵は DB に問い合わせずに「アカウントがない人」にする
   async resolve(sessionKey: string | null): Promise<Session> {
     if (sessionKey === null || !SESSION_KEY.test(sessionKey)) return { userId: null, refresh: false };
-    const found = await this.#accounts.findBySession(this.#sha256(sessionKey));
+    const found = await this.#accounts.findBySession(this.#hasher.sha256(sessionKey));
     if (found === null) return { userId: null, refresh: false };
     const now = this.#clock.now();
     if (this.#jstDate(found.lastSeenAt) === this.#jstDate(now)) return { userId: found.userId, refresh: false };
@@ -65,19 +66,11 @@ export class AccountService implements SessionResolver, AccountStarter {
 
   async start(ip: string): Promise<StartedAccount> {
     const sessionKey = this.#keys.next();
-    const hmac = createHmac("sha256", this.#ipHashSecret);
-    hmac.update(ip);
-    const created = await this.#accounts.create(this.#sha256(sessionKey), hmac.digest());
+    const created = await this.#accounts.create(this.#hasher.sha256(sessionKey), this.#hasher.ip(ip));
     if (created.status === "rate_limited") {
       throw new AppError("TOO_MANY_REQUESTS", "アカウントを作る回数が多すぎる。しばらく待ってからやり直す", created.retryAfterSeconds);
     }
     return { userId: created.userId, sessionKey };
-  }
-
-  #sha256(value: string): Buffer {
-    const hash = createHash("sha256");
-    hash.update(value);
-    return hash.digest();
   }
 
   #jstDate(at: Date): string {

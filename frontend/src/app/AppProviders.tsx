@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { domAnimation, LazyMotion, MotionConfig } from 'motion/react'
-import type { EventsApi, OptionsApi, SuggestionsApi } from '../api/client'
+import type { AccountApi, EventsApi, OptionsApi, SuggestionsApi } from '../api/client'
+import { AccountMemory, BrowserStore } from '../lib/AccountMemory'
+import type { AccountMemo } from '../lib/AccountMemory'
 import { Toast } from '../components/Toast'
 import type { ToastKind } from '../components/Toast'
 import { CatalogCache } from '../lib/CatalogCache'
@@ -9,6 +11,9 @@ import { ClientErrorReporter } from '../lib/ErrorReporter'
 import { ListPrefetch } from '../lib/ListPrefetch'
 import { HistoryScroll } from '../lib/ScrollMemory'
 import {
+  AccountApiContext,
+  AccountChangesContext,
+  AccountMemoContext,
   CatalogLoaderContext,
   ListLoaderContext,
   NotifierContext,
@@ -16,16 +21,16 @@ import {
   ScrollMemoryContext,
   SuggestionsApiContext,
 } from './contexts'
-import type { Notifier } from './contexts'
+import type { AccountChanges, Notifier } from './contexts'
 
 const TOAST_MS = 3000
 
-type Props = { api: OptionsApi; suggestions: SuggestionsApi; events: EventsApi; children: ReactNode }
+type Props = { api: OptionsApi; suggestions: SuggestionsApi; events: EventsApi; account: AccountApi; children: ReactNode }
 
 // 依存（API クライアント）とトーストを Context で配る。main.tsx が本物の HttpApiClient を渡す
 // Motion は使う機能（domAnimation）だけを読み込み（初期表示の JS を抑える。metrics.md §3）、視差効果を減らす設定に従わせる
 // トーストで知らせた失敗と、画面で拾えなかったエラーは client_error として送る（screens.md §8）
-export function AppProviders({ api, suggestions, events, children }: Props) {
+export function AppProviders({ api, suggestions, events, account, children }: Props) {
   // 同じ文言が続いても出し直すたびに表示時間を延ばすよう、文言ではなく出した回の値で時間を測る
   const [toast, setToast] = useState<{ text: string; kind: ToastKind } | null>(null)
 
@@ -60,23 +65,50 @@ export function AppProviders({ api, suggestions, events, children }: Props) {
   const loader = useMemo(() => new ListPrefetch(api), [api])
   const catalog = useMemo(() => new CatalogCache(suggestions), [suggestions])
   const [scroll] = useState(() => new HistoryScroll())
+  const [memo] = useState(() => new AccountMemory(new BrowserStore()))
+  // 引き継いだ・すべて消したら、覚えている一覧と提案を捨て、開いている一覧に読み直させる（screens.md §9）
+  const [version, setVersion] = useState(0)
+  const changed = useCallback(() => {
+    loader.forget('pending')
+    loader.forget('completed')
+    catalog.forget()
+    setVersion((current) => current + 1)
+  }, [loader, catalog])
+  const [issues, setIssues] = useState(0)
+  const issued = useCallback(() => setIssues((current) => current + 1), [])
+  const changes = useMemo<AccountChanges>(() => ({ version, changed, issues, issued }), [version, changed, issues, issued])
 
   return (
-    <OptionsApiContext value={api}>
-      <SuggestionsApiContext value={suggestions}>
-        <ListLoaderContext value={loader}>
-          <CatalogLoaderContext value={catalog}>
-            <ScrollMemoryContext value={scroll}>
-              <NotifierContext value={notifier}>
-                <LazyMotion features={domAnimation} strict>
-                  <MotionConfig reducedMotion="user">{children}</MotionConfig>
-                </LazyMotion>
-                <Toast message={toast === null ? null : toast.text} kind={toast === null ? 'error' : toast.kind} />
-              </NotifierContext>
-            </ScrollMemoryContext>
-          </CatalogLoaderContext>
-        </ListLoaderContext>
-      </SuggestionsApiContext>
-    </OptionsApiContext>
+    <AccountProviders account={account} memo={memo} changes={changes}>
+      <OptionsApiContext value={api}>
+        <SuggestionsApiContext value={suggestions}>
+          <ListLoaderContext value={loader}>
+            <CatalogLoaderContext value={catalog}>
+              <ScrollMemoryContext value={scroll}>
+                <NotifierContext value={notifier}>
+                  <LazyMotion features={domAnimation} strict>
+                    <MotionConfig reducedMotion="user">{children}</MotionConfig>
+                  </LazyMotion>
+                  <Toast message={toast === null ? null : toast.text} kind={toast === null ? 'error' : toast.kind} />
+                </NotifierContext>
+              </ScrollMemoryContext>
+            </CatalogLoaderContext>
+          </ListLoaderContext>
+        </SuggestionsApiContext>
+      </OptionsApiContext>
+    </AccountProviders>
+  )
+}
+
+type AccountProps = { account: AccountApi; memo: AccountMemo; changes: AccountChanges; children: ReactNode }
+
+// アカウント（screens.md §9）の依存
+function AccountProviders({ account, memo, changes, children }: AccountProps) {
+  return (
+    <AccountApiContext value={account}>
+      <AccountMemoContext value={memo}>
+        <AccountChangesContext value={changes}>{children}</AccountChangesContext>
+      </AccountMemoContext>
+    </AccountApiContext>
   )
 }

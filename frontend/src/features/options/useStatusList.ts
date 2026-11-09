@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { Option, OptionStatus } from '../../../../shared/types'
-import { useListLoader, useNotifier, useOptionsApi } from '../../app/hooks'
+import { useAccountChanges, useListLoader, useNotifier, useOptionsApi } from '../../app/hooks'
 import type { ListMerge } from '../../lib/ListMerge'
 import { OptionListActions } from '../../lib/OptionListActions'
 import type { ListActions } from '../../lib/OptionListActions'
@@ -29,6 +29,14 @@ export function useStatusList(status: OptionStatus, failure: string, merge: List
   const [options, setOptions] = useState<Option[] | null>(() => loader.cached(status))
   // 読み込みが届いたら true。最近読んだ一覧を出している間は、届いた一覧で置き換わるので並び替えさせない（screens.md §2）
   const [loaded, setLoaded] = useState(false)
+  // 引き継いだ・すべて消したら（screens.md §9）、前のアカウントの一覧を消してから読み直す（merge が前の項目を残さないように）
+  const { version } = useAccountChanges()
+  const [shownVersion, setShownVersion] = useState(version)
+  if (version !== shownVersion) {
+    setShownVersion(version)
+    setOptions(null)
+    setLoaded(false)
+  }
 
   useEffect(() => {
     let active = true
@@ -44,7 +52,7 @@ export function useStatusList(status: OptionStatus, failure: string, merge: List
     return () => {
       active = false
     }
-  }, [loader, notifier, status, failure, merge])
+  }, [loader, notifier, status, failure, merge, version])
 
   useEffect(() => {
     if (options !== null) loader.remember(status, options)
