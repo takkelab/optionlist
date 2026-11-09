@@ -55,6 +55,11 @@ describe("deploy.yml", () => {
     assert.doesNotMatch(body, /actions\/checkout/);
   });
 
+  // gcloud ... | jq の gcloud の失敗で止まるように（R8 の初回の本番で、権限の 403 が「100% のリビジョンがない」に隠れた）
+  it("run は bash -eo pipefail で動く（defaults.run.shell: bash）", () => {
+    assert.match(workflow, /\ndefaults:\n {2}run:\n {4}shell: bash\n/);
+  });
+
   it("actions: write・write-all を与えていない", () => {
     assert.deepEqual(githubProblems("read", [{ path: "deploy.yml", content: workflow }]), []);
   });
