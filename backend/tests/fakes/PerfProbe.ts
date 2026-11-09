@@ -1,4 +1,5 @@
 import type { CountingDatabase } from "./CountingDatabase";
+import { TEST_ORIGIN } from "./TestRequests";
 
 export type TimedResponse = { status: number; body: unknown; ms: number; queries: number };
 
@@ -38,7 +39,8 @@ export class PerfProbe implements HttpProbe {
   async #send(method: string, path: string, init: RequestInit): Promise<TimedResponse> {
     const before = this.#db.count();
     const started = performance.now();
-    const headers = { ...(init.headers as Record<string, string> | undefined), Cookie: this.#cookie };
+    // ブラウザと同じく Origin を付ける（Origin の確認。api.md §1）
+    const headers = { ...(init.headers as Record<string, string> | undefined), Cookie: this.#cookie, Origin: TEST_ORIGIN };
     const res = await fetch(`${this.#baseUrl}${path}`, { ...init, headers, method });
     const text = await res.text();
     const ms = performance.now() - started;

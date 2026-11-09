@@ -6,8 +6,9 @@ export interface PoolFactory {
 }
 
 // 使っていない接続が切れたとき（DB の再起動・メンテナンスなど）のログの出し先
+// （JsonLogger の Logger はこの形を満たす。テストとスクリプトは console を渡す）
 export interface PoolErrorLogger {
-  error(message: string, error: unknown): void;
+  error(entry: { kind: "db_pool_error"; message: string; error: unknown }): void;
 }
 
 export type DatabaseUrlName = "APP_DATABASE_URL" | "DATABASE_URL";
@@ -49,7 +50,7 @@ export class PgPoolFactory implements PoolFactory {
       throw new Error(`${this.#urlName} が未設定です。backend/.env.example（テストは .env.test.example）を参考に設定してください`);
     }
     const pool = new pg.Pool({ connectionString, max: 10, options: "-c TimeZone=UTC", types: new AppTypeParsers() });
-    pool.on("error", (error) => this.#logger.error("DB の接続が切れた（使っていない接続）", error));
+    pool.on("error", (error) => this.#logger.error({ kind: "db_pool_error", message: "DB の接続が切れた（使っていない接続）", error }));
     return pool;
   }
 }

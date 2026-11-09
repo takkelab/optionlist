@@ -8,7 +8,7 @@
 - JSON のキーは camelCase（DB の列は snake_case。変換は repository で行う）
 - エラーは `{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }` の形で返す
 - **誰のデータか**は Cookie `__Host-ol_session` で決める（§6）。Cookie がない・無効なときは「アカウントがない人」として扱い、ログイン画面や 401 は返さない（一覧は空、`:id` の指定は 404）
-- `GET`・`HEAD` 以外のリクエストは、`Origin` ヘッダーが自分のオリジンと一致しなければ 403 にする。JSON を受け取る API は、`Content-Type` が `application/json` でなければ 400 にする（docs/decisions/0038）
+- `GET`・`HEAD` 以外のリクエストは、`Origin` ヘッダーが自分のオリジンと一致しなければ 403 にする（`Origin` がないときも 403）。自分のオリジンは `APP_ORIGIN`。手元とテストで `APP_ORIGIN` がなければ、リクエストの `Host` から作ったものと比べる。本文のある書き込みは、`Content-Type` が `application/json`（写真のアップロードだけ `multipart/form-data`）でなければ 400 にする（docs/decisions/0038・0050）
 - 他人の行を指定したときは、存在しないときと同じ 404 にする（あるかどうかを見せない）
 - 応答には、architecture.md §4 のセキュリティのヘッダーを付ける。API の応答は `Cache-Control: no-store`（写真の配信を除く。§5）
 

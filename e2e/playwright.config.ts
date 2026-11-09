@@ -22,6 +22,8 @@ export default defineConfig({
     isMobile: true,
     hasTouch: true,
     locale: 'ja-JP',
+    // page.request の種まきは Origin を付けないので、画面と同じオリジンを付ける（backend の Origin の確認。api.md §1）
+    extraHTTPHeaders: { Origin: `http://localhost:${FRONTEND_PORT}` },
     trace: 'retain-on-failure',
   },
   webServer: [

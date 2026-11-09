@@ -39,6 +39,7 @@ const READ_PATHS = [
 const MASTER_TABLES = ["themes", "tags", "suggestions", "suggestion_tags"];
 
 const PHOTO_RUNS = 20;
+const UNLIMITED = { limit: Number.MAX_SAFE_INTEGER, windowMs: 60_000 };
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1024 * 1024 - 4)]);
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-perf-photos-"));
 
@@ -54,7 +55,13 @@ const servers: Server[] = [];
 const probes: PerfProbe[] = [];
 
 beforeAll(async () => {
-  const server = await new TestApp({ db, sessionDb: new PgDatabase(appPool, new PromMetrics()), photoFiles: new LocalPhotoFiles(uploadDir) }).listen(0);
+  // 同じ人・同じ IP で何百回も書くので、回数の制限（api.md §6）は測る邪魔にならない値にする
+  const server = await new TestApp({
+    db,
+    sessionDb: new PgDatabase(appPool, new PromMetrics()),
+    photoFiles: new LocalPhotoFiles(uploadDir),
+    rateLimits: { events: UNLIMITED, writes: UNLIMITED },
+  }).listen(0);
   const { port } = server.address() as AddressInfo;
   servers.push(server);
   probes.push(new PerfProbe(`http://127.0.0.1:${port}`, db, COOKIE));

@@ -2,7 +2,6 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Express } from "express";
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Achievement, Option } from "../../../shared/types";
 import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
@@ -12,6 +11,7 @@ import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakePhotoFiles } from "../fakes/FakePhotoFiles";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
+import { TestRequests } from "../fakes/TestRequests";
 import { TestDatabase } from "../fakes/TestDatabase";
 import { TestUsers } from "../fakes/TestUsers";
 
@@ -234,7 +234,7 @@ describe("DELETE /api/options/:id and the photos", () => {
     files.failRemoving();
 
     expect(await client.remove(id)).toMatchObject({ status: 204 });
-    const { text } = await request(failing).get("/api/metrics");
+    const { text } = await new TestRequests(failing).metrics();
     expect(text).toContain("orphan_file_errors_total 1");
   });
 });

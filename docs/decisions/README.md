@@ -80,3 +80,4 @@
 | [0047](0047-postgres-baseline-details.md) | Postgres に移るときの細部（fixture の作り方、フルテーブルスキャンの数え方、ID の上限） | 確定 |
 | [0048](0048-anonymous-account-details.md) | 匿名アカウントとデータの分離の細部（R2 の範囲、ロールの作り方、2 つの指標） | 確定 |
 | [0049](0049-recovery-code-details.md) | 復旧コードとすべてのデータを消すの細部（断った試行を数えない、規約のリンクは R6） | 確定 |
+| [0050](0050-security-baseline-details.md) | API のセキュリティの土台の細部（Origin がなければ 403、手元は Host と比べる、ログの伏せ字） | 確定 |

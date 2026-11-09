@@ -5,9 +5,11 @@ export interface PhotoRemover {
   remove(filenames: string[]): Promise<void>;
 }
 
-// 削除の失敗の出力先（server.ts では console を渡す）
+// 削除の失敗の出力先（server.ts では JsonLogger を渡す）。ファイル名・ID は message に入れない（docs/decisions/0042）
+export type FailureEntry = { kind: "orphan_file_error" | "account_cleanup_error"; message: string; error: unknown };
+
 export interface FailureLog {
-  error(message: string, error: unknown): void;
+  error(entry: FailureEntry): void;
 }
 
 // 行を消したあとのファイルの片付け（api.md §5）。行はもう消えているので、失敗しても API は成功のままにし、
@@ -28,7 +30,7 @@ export class PhotoCleanup implements PhotoRemover {
       try {
         await this.#files.remove(filename);
       } catch (error) {
-        this.#log.error(`写真のファイル ${filename} を消せなかった`, error);
+        this.#log.error({ kind: "orphan_file_error", message: "写真のファイルを消せなかった", error });
         this.#metrics.countOrphanFileError();
       }
     }

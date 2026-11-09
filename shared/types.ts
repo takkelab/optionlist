@@ -72,8 +72,11 @@ export type Event = {
 };
 
 export type ApiError = {
-  // TOO_MANY_REQUESTS は回数の制限（api.md §6）。Retry-After のヘッダーが付く
-  error: { code: "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL_ERROR"; message: string };
+  // FORBIDDEN は Origin が違う書き込み（api.md §1）。TOO_MANY_REQUESTS は回数の制限（api.md §6）。Retry-After のヘッダーが付く
+  error: {
+    code: "VALIDATION_ERROR" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL_ERROR";
+    message: string;
+  };
 };
 
 // POST /api/account/restore の 409。localItemCount はこの端末のアカウントの項目の件数（確認の文「やりたいこと（N 件）」に出す）

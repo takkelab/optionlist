@@ -88,11 +88,11 @@ optionlist-web/
 │   │   ├── jobs/             # Cloud Run Job のエントリーポイント（削除のジョブ cleanup.ts、エラーの件数の集計。data.md §5）
 │   │   ├── app.ts            # Express の設定（クラス。supertest はこれを使う）
 │   │   ├── controllers/      # ルーティング・入力検証・レスポンス
-│   │   ├── services/         # 処理（並び順、完了、提案の関連の順番、アカウントと復旧コードなど）
+│   │   ├── services/         # 処理（並び順、完了、提案の関連の順番、アカウントと復旧コード、メモリで数える回数の制限など）
 │   │   ├── repositories/     # SQL はここだけ。snake_case ↔ camelCase の変換もここ。写真のファイルの置き場所（LocalPhotoFiles・GcsPhotoFiles）もここ
 │   │   ├── middleware/       # エラーハンドラ、multer、リクエスト計測、セッション、Origin の確認、回数の制限、セキュリティのヘッダー、画面の配信
 │   │   ├── metrics/          # prom-client の定義
-│   │   └── infra/            # DB 接続（pg のプール、TimeZone=UTC、UserScopedDatabase、クエリ計測ラッパー）、JSON のログ
+│   │   └── infra/            # DB 接続（pg のプール、TimeZone=UTC、UserScopedDatabase、クエリ計測ラッパー）、JSON のログ、環境変数の読み取り（AppConfig）
 │   ├── tests/
 │   │   ├── unit/             # フェイクだけで動くテスト（UT カバレッジの対象）
 │   │   ├── api/              # supertest＋テスト用 DB
@@ -157,6 +157,7 @@ optionlist-web/
 | `IP_HASH_SECRET` | IP を HMAC する秘密の値（api.md §6） | Secret Manager |
 
 - 秘密の値は、リポジトリ・GitHub の変数・ログに置かない。手元は `backend/.env`（git に入れない）
+- `APP_ENV` が `staging` か `production` で、`APP_ORIGIN`・`METRICS_TOKEN`・`IP_HASH_SECRET` のどれかがなければ、backend は起動の時点で止まる（`infra/AppConfig.ts`。docs/decisions/0050）。手元は `APP_ENV` を書かなければ `development`、`APP_ORIGIN` を書かなければ Host と比べる（api.md §1）。`METRICS_TOKEN` を書かなければ `/api/metrics` はいつも 404
 - 手元と CI では、ロールと DB を作る superuser の `ADMIN_DATABASE_URL` も使う（`db:roles` だけが読む。data.md §4）。手元の `DATABASE_URL` も `ol_migrator`、アプリは `APP_DATABASE_URL`（`ol_app`）で接続する
 
 ### 4.3 本番での振る舞い

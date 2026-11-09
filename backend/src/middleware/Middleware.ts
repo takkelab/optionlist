@@ -8,7 +8,27 @@ export interface ErrorMiddleware {
   handler(): ErrorRequestHandler;
 }
 
-// 想定外のエラーの出力先（server.ts では console を渡す）
+// ログの種類（docs/decisions/0042）。Cloud Logging のログベースの指標とアラートは kind で拾う
+export type LogKind =
+  | "unhandled_error"
+  | "orphan_file_error"
+  | "account_cleanup_error"
+  | "db_pool_error"
+  | "server_started"
+  | "server_start_failed";
+
+// 1 行に出すもの。ここにないキーは出さない（Cookie・復旧コード・タイトル・写真の名前をうっかり載せないため）
+export type LogEntry = {
+  kind: LogKind;
+  message: string;
+  error?: unknown;
+  route?: string;
+  status?: number;
+  durationMs?: number;
+};
+
+// アプリのログの出し先（architecture.md §4.3）。server.ts は infra/JsonLogger、テストは FakeLogger か console を渡す
 export interface Logger {
-  error(message: string, error: unknown): void;
+  error(entry: LogEntry): void;
+  info(entry: LogEntry): void;
 }

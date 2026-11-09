@@ -12,8 +12,12 @@ export interface HttpApp {
 export type AppDeps = {
   controllers: Controller[];
   requestMetrics: Middleware;
+  // 本文を読む前に通す（Cache-Control・Origin・Content-Type。api.md §1）
+  guards: Middleware[];
   // Cookie からそのリクエストの人を決める（api.md §6）
   session: Middleware;
+  // 書き込みの回数の制限（api.md §6）。人を決めたあとに通す
+  rateLimit: Middleware;
   notFound: Middleware;
   errorHandler: ErrorMiddleware;
 };
@@ -24,6 +28,8 @@ export class ExpressApp implements HttpApp {
   readonly #controllers: Controller[];
   readonly #requestMetrics: Middleware;
   readonly #session: Middleware;
+  readonly #guards: Middleware[];
+  readonly #rateLimit: Middleware;
   readonly #notFound: Middleware;
   readonly #errorHandler: ErrorMiddleware;
 
@@ -31,15 +37,23 @@ export class ExpressApp implements HttpApp {
     this.#controllers = deps.controllers;
     this.#requestMetrics = deps.requestMetrics;
     this.#session = deps.session;
+    this.#guards = deps.guards;
+    this.#rateLimit = deps.rateLimit;
     this.#notFound = deps.notFound;
     this.#errorHandler = deps.errorHandler;
   }
 
   build(): Express {
     const app = express();
+    // ルートのパスは書いたとおりにだけ当てる（Express の既定は末尾の / と大文字小文字の違いも同じルートに当てるので、
+    // /api/events/ や /API/options が、パスで判定する Origin の確認・回数の制限をすり抜けてしまう。docs/decisions/0050）
+    app.set("strict routing", true);
+    app.set("case sensitive routing", true);
     app.use(this.#requestMetrics.handler());
+    for (const guard of this.#guards) app.use(guard.handler());
     app.use(express.json({ limit: "1mb" }));
     app.use(this.#session.handler());
+    app.use(this.#rateLimit.handler());
     this.routes(app);
     app.use("/api", this.#notFound.handler());
     app.use(this.#errorHandler.handler());
