@@ -13,12 +13,14 @@
 - 写真の保存（`PUT /api/achievements/:id/photo`）は、そのほかの書き込みの枠（1 分 120 回）に加えて、写真の枠（1 時間 60 回）でも数える
 - `achievements.photo_bytes` を足し、名前と大きさが一緒に NULL か値を持つ CHECK を付ける。マイグレーションの前からある写真の行は 0 にする
 - 確認用・本番（`APP_ENV` が staging / production）では `PHOTO_BUCKET` を必須にし、なければ起動を止める
-- `GcsPhotoFiles` のテストは fake-gcs-server（`fsouza/fake-gcs-server:1.52.2`）につなぐ。CI はサービスコンテナではなく `docker run`（`npm --prefix backend run gcs:emulator`）で起動する。手元で `STORAGE_EMULATOR_HOST` がなければ GCS の分を飛ばし、CI（`CI` がある）では飛ばさずに失敗にする
+- `GcsPhotoFiles` のテストは fake-gcs-server（`fsouza/fake-gcs-server:1.52.2`）につなぐ。CI はサービスコンテナではなく `docker run`（`npm --prefix backend run gcs:emulator`）で起動する。手元で `GCS_EMULATOR_URL` がなければ GCS の分を飛ばし、CI（`CI` がある）では飛ばさずに失敗にする
+- エミュレーターの URL は自分の環境変数 `GCS_EMULATOR_URL` で受け、`new Storage({ apiEndpoint })` に渡す。`@google-cloud/storage` が直接読む `STORAGE_EMULATOR_HOST` は使わない
 
 ## 理由
 - 上限は、待っても解けない（写真を消すまで続く）。`Retry-After` を付けると、待てば保存できるように見える。コードを分けないと、画面が 2 つの 429 を見分けられない
 - `sendFile` はディスクのファイルにしか使えない。写真は長辺 1280px（数百 KB）なので、メモリに読んで返しても困らない。2 つの実装の形をそろえると、同じテストで確かめられる
 - 順番: 安い確かめを先にする。他人の・ない達成に対して sharp を回さない（作り直しは 50〜150ms かかる）。上限は作り直した後の大きさで数えるので、作り直しのあと
+- `GCS_EMULATOR_URL`: ライブラリは `STORAGE_EMULATOR_HOST` があると、その値をそのまま JSON API の基点にして `/storage/v1` を付けない。一方アップロード・ダウンロードの URL は同じ値の後ろに `/upload/storage/v1` などを付けるので、どう書いても片方がずれる（最初の CI でバケットの作成が 404 になった）。`apiEndpoint` で渡せば、どちらも正しく組み立てられる
 - `failOn`: 撮ったスマホや転送の途中でわずかに壊れた写真も、見られるなら残したい。画素は作り直すので、警告の残りを保存することはない
 - `FOR UPDATE`: 前の名前を別のトランザクションで読むと、同じ達成に 2 本同時に送られたとき、どちらも同じ古い名前を消し、片方の新しいファイルがどの行からも指されずに残った（reviewer の指摘）。削除のジョブ（R9）が拾うまで容量を使い、上限にも数えられない
 - 解凍爆弾: 小さなファイルでも、展開すると何 GB にもなる画像がある。sharp の既定（約 2.7 億画素）では Cloud Run のメモリ（512MB）を使い切りうる。スマホの写真は 5,000 万画素までに収まる
@@ -31,4 +33,4 @@
 - backend: `repositories/PhotoFiles.ts`・`GcsPhotoFiles.ts`・`LocalPhotoFiles.ts`・`AchievementRepository.ts`、`services/PhotoRebuilder.ts`・`AchievementPhotoService.ts`・`errors.ts`、`controllers/AchievementPhotoController.ts`、`middleware/ApiGuards.ts`・`WriteRateLimit.ts`、`infra/AppConfig.ts`、`server.ts`、`AppAssembly.ts`、マイグレーション `20261109030405_photo_bytes.sql`、性能用データ
 - frontend: `api/client.ts`（`PhotoRefusedError`）、`lib/OptionListActions.ts`
 - テスト: `tests/api/photo-files-contract.test.ts`（新規）、`tests/unit/photo-rebuilder.test.ts`（新規）、`tests/fakes/TestImages.ts`（本物の画像。偽の JPEG は sharp で 400 になる）、`FakePhotoRebuilder.ts`
-- CI: `.github/workflows/ci.yml` に fake-gcs-server の起動と `STORAGE_EMULATOR_HOST`
+- CI: `.github/workflows/ci.yml` に fake-gcs-server の起動と `GCS_EMULATOR_URL`

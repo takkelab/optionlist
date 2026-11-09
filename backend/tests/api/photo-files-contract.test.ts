@@ -17,13 +17,14 @@ import { TestImages } from "../fakes/TestImages";
 import { TestUsers } from "../fakes/TestUsers";
 
 // PhotoFiles の 2 つの実装（手元・CI の LocalPhotoFiles、確認用・本番の GcsPhotoFiles）を同じテストで確かめる（testing.md §2）
-// GcsPhotoFiles は fake-gcs-server（npm --prefix backend run gcs:emulator）につなぐ。STORAGE_EMULATOR_HOST がなければ
+// GcsPhotoFiles は fake-gcs-server（npm --prefix backend run gcs:emulator）につなぐ。GCS_EMULATOR_URL がなければ
 // 手元では飛ばし、CI では失敗にする（CI で黙って飛ばさない。docs/decisions/0051）
-const emulator = process.env.STORAGE_EMULATOR_HOST ?? "";
+// エミュレーターは apiEndpoint で渡す（STORAGE_EMULATOR_HOST はライブラリがそのまま JSON API の基点にし、/storage/v1 が付かない）
+const emulator = process.env.GCS_EMULATOR_URL ?? "";
 const inCi = (process.env.CI ?? "") !== "";
 const BUCKET = "optionlist-test-photos";
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-contract-"));
-const storage = new Storage({ projectId: "optionlist-test" });
+const storage = new Storage({ projectId: "optionlist-test", apiEndpoint: emulator === "" ? "http://127.0.0.1:1" : emulator });
 const bucket = storage.bucket(BUCKET);
 const JPEG = await new TestImages().jpeg();
 
@@ -31,7 +32,7 @@ const implementations: [string, PhotoFiles][] = [["LocalPhotoFiles", new LocalPh
 if (emulator !== "" || inCi) implementations.push(["GcsPhotoFiles", new GcsPhotoFiles(bucket)]);
 
 beforeAll(async () => {
-  if (emulator === "" && inCi) throw new Error("CI では STORAGE_EMULATOR_HOST（fake-gcs-server）が必要です");
+  if (emulator === "" && inCi) throw new Error("CI では GCS_EMULATOR_URL（fake-gcs-server）が必要です");
   if (emulator === "") return;
   const [exists] = await bucket.exists();
   if (!exists) await storage.createBucket(BUCKET);

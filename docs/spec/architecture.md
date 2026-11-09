@@ -158,7 +158,7 @@ optionlist-web/
 
 - 秘密の値は、リポジトリ・GitHub の変数・ログに置かない。手元は `backend/.env`（git に入れない）
 - `APP_ENV` が `staging` か `production` で、`APP_ORIGIN`・`METRICS_TOKEN`・`IP_HASH_SECRET`・`PHOTO_BUCKET` のどれかがなければ、backend は起動の時点で止まる（`infra/AppConfig.ts`。docs/decisions/0050・0051）。手元は `APP_ENV` を書かなければ `development`、`APP_ORIGIN` を書かなければ Host と比べる（api.md §1）。`METRICS_TOKEN` を書かなければ `/api/metrics` はいつも 404
-- 手元と CI では、`STORAGE_EMULATOR_HOST`（fake-gcs-server の URL。`@google-cloud/storage` がそこへつなぐ）を `GcsPhotoFiles` のテストに使う（testing.md §2）。確認用・本番には置かない
+- 手元と CI では、`GCS_EMULATOR_URL`（fake-gcs-server の URL。`@google-cloud/storage` の `apiEndpoint` に渡す。ライブラリが直接読む `STORAGE_EMULATOR_HOST` は URL がずれるので使わない）を `GcsPhotoFiles` のテストに使う（testing.md §2）。確認用・本番には置かない
 - 手元と CI では、ロールと DB を作る superuser の `ADMIN_DATABASE_URL` も使う（`db:roles` だけが読む。data.md §4）。手元の `DATABASE_URL` も `ol_migrator`、アプリは `APP_DATABASE_URL`（`ol_app`）で接続する
 
 ### 4.3 本番での振る舞い

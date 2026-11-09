@@ -41,7 +41,7 @@
   - すべてのデータを消す: 行と写真のファイルが消え、Cookie が消えること。アカウントがなくても 204 になること
   - セキュリティ（docs/decisions/0038）: `Origin` が違う書き込みが 403 になること。`Content-Type` が JSON でない JSON の API が 400 になること。`/api/metrics` がトークンなし・違うトークンで 404 になること。`APP_ENV=production` で `/api/health/db` が `message` を返さないこと。500 の `message` に内部の情報が出ないこと
   - 写真（docs/decisions/0037）: 位置情報の入った JPEG を送ると、保存されたファイルに EXIF が残っていないこと。長辺が 1280px に縮み、JPEG で保存されること。先頭だけ JPEG の読めないファイルが 400 になること。写真の配信に `Cache-Control: private`・`Vary: Cookie`・CSP・`Content-Disposition: inline` が付くこと。1 人あたりの上限で 429 `PHOTO_LIMIT_REACHED` になり、置き換えは上限でも通ること。保存の回数の制限で 429 と `Retry-After` になること
-  - 写真の置き場所（`tests/api/photo-files-contract.test.ts`）: `LocalPhotoFiles` と `GcsPhotoFiles` を同じテストで確かめる（保存して同じ中身が読める、名前がサーバーの UUID、消したら読めない、ない名前を読むと null で消しても失敗しない）。`GcsPhotoFiles` は fake-gcs-server につなぎ、API 越しの保存と配信も確かめる。手元で `STORAGE_EMULATOR_HOST` がなければ GCS の分を飛ばし、CI では飛ばさずに失敗にする（docs/decisions/0051）
+  - 写真の置き場所（`tests/api/photo-files-contract.test.ts`）: `LocalPhotoFiles` と `GcsPhotoFiles` を同じテストで確かめる（保存して同じ中身が読める、名前がサーバーの UUID、消したら読めない、ない名前を読むと null で消しても失敗しない）。`GcsPhotoFiles` は fake-gcs-server につなぎ、API 越しの保存と配信も確かめる。手元で `GCS_EMULATOR_URL` がなければ GCS の分を飛ばし、CI では飛ばさずに失敗にする（docs/decisions/0051）
   - テストで送る写真は本物の画像にする（`tests/fakes/TestImages.ts`。sharp で作り直すので、先頭のバイトだけの偽物は 400 になる）
 
 ## 3. 統合テスト（性能）
