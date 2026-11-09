@@ -25,8 +25,8 @@ export interface CompletionActions {
   removePhoto(): Promise<void>
 }
 
-// 1px の PNG（backend の形式の検査とブラウザの読み込みを本当に通す）
-const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+// 1px の PNG（backend の形式の検査・sharp での作り直しと、ブラウザの読み込みを本当に通す）。isolation.spec.ts も使う
+export const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
 // 項目のシートの 🎉（screens.md §4）と、やりたいリストに戻す・達成した日（§3）の操作
 export class CompletionScreen implements CompletionActions {

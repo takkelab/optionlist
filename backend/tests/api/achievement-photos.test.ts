@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Express } from "express";
+import sharp from "sharp";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Achievement, Option } from "../../../shared/types";
 import { LocalPhotoFiles } from "../../src/repositories/LocalPhotoFiles";
@@ -11,6 +12,7 @@ import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { FakePhotoFiles } from "../fakes/FakePhotoFiles";
 import { OptionsApiClient } from "../fakes/OptionsApiClient";
 import { TestApp } from "../fakes/TestApp";
+import { TestImages } from "../fakes/TestImages";
 import { TestRequests } from "../fakes/TestRequests";
 import { TestDatabase } from "../fakes/TestDatabase";
 import { TestUsers } from "../fakes/TestUsers";
@@ -24,7 +26,8 @@ const users = new TestUsers(pool);
 const dbWrapper = new PgDatabase(appPool, new PromMetrics());
 const uploadDir = mkdtempSync(join(tmpdir(), "optionlist-photos-"));
 const app: Express = new TestApp({ db: dbWrapper, photoFiles: new LocalPhotoFiles(uploadDir) }).build();
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]);
+const images = new TestImages();
+const JPEG = await images.jpeg();
 // 各テストの人（reset で ID が 1 から振り直されるので、直接入れる行の user_id は 1）。beforeEach で Cookie を入れる
 const api = new OptionsApiClient(app);
 
@@ -83,12 +86,14 @@ describe("PUT /api/achievements/:id/photo", () => {
 
     const { status: servedStatus, headers } = await api.send((r) => r.get(String(photoUrl)));
     expect(servedStatus).toBe(200);
-    // 人ごとに違う中身なので、共有のキャッシュに置かせない（api.md §5）
+    // 人ごとに違う中身なので、共有のキャッシュに置かせない。写真に見せかけた HTML などを実行させない（api.md §5）
     expect(headers).toMatchObject({
       "content-type": "image/jpeg",
       "cache-control": "private, max-age=31536000, immutable",
       vary: "Cookie",
       "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'",
+      "content-disposition": "inline",
     });
 
     const detail = await api.detail(achievement.optionId);
@@ -105,12 +110,21 @@ describe("PUT /api/achievements/:id/photo", () => {
     expect(after).not.toContain(first);
   });
 
+  // 同時に置き換えても、行が指すファイル 1 つだけが残る（行を押さえてから前の名前を読む）
+  it("leaves only the file the row points to when two replacements race", async () => {
+    const { id } = await steps.achieved();
+    await steps.put(id, JPEG);
+    await Promise.all([steps.put(id, JPEG), steps.put(id, JPEG), steps.put(id, JPEG)]);
+    const { rows } = await pool.query("SELECT photo_filename FROM achievements");
+    expect(folder.files()).toEqual(rows.map((row: { photo_filename: string }) => row.photo_filename));
+  });
+
   // いちばん新しい達成に写真がなければ、写真がある中でいちばん新しいものを出す（screens.md §6）
   it("uses the newest achievement that has a photo for the option", async () => {
     const { id: optionId } = await api.added("a");
     await pool.query(
-      `INSERT INTO achievements (id, user_id, option_id, achieved_at, photo_filename) OVERRIDING SYSTEM VALUE VALUES
-       (1, 1, $1, '2026-11-01 00:00:00', 'old.jpg'), (2, 1, $1, '2026-11-02 00:00:00', 'new.jpg'), (3, 1, $1, '2026-11-03 00:00:00', NULL)`,
+      `INSERT INTO achievements (id, user_id, option_id, achieved_at, photo_filename, photo_bytes) OVERRIDING SYSTEM VALUE VALUES
+       (1, 1, $1, '2026-11-01 00:00:00', 'old.jpg', 1), (2, 1, $1, '2026-11-02 00:00:00', 'new.jpg', 1), (3, 1, $1, '2026-11-03 00:00:00', NULL, NULL)`,
       [optionId],
     );
     const { body } = await api.list("?status=pending");
@@ -166,6 +180,54 @@ describe("PUT /api/achievements/:id/photo", () => {
   });
 });
 
+// sharp で作り直したものだけを保存する（api.md §5、docs/decisions/0037）
+describe("PUT /api/achievements/:id/photo rebuilds the photo", () => {
+  it("removes the location from the saved file and records its size", async () => {
+    const { id } = await steps.achieved();
+    expect(await steps.put(id, await images.jpegWithLocation())).toMatchObject({ status: 200 });
+    const [name] = folder.files();
+    const saved = readFileSync(join(uploadDir, String(name)));
+    const { exif, format } = await sharp(saved).metadata();
+    expect([format, exif]).toEqual(["jpeg", undefined]);
+    const { rows } = await pool.query("SELECT photo_filename, photo_bytes FROM achievements");
+    expect(rows).toEqual([{ photo_filename: name, photo_bytes: saved.length }]);
+  });
+
+  it("shrinks a PNG into a JPEG with the long side at 1280px", async () => {
+    const { id } = await steps.achieved();
+    const { body } = await steps.put(id, await images.png(2000, 1000), "photo.png");
+    expect((body as Achievement).photoUrl).toMatch(/\.jpg$/);
+    const [name] = folder.files();
+    const { width, height } = await sharp(readFileSync(join(uploadDir, String(name)))).metadata();
+    expect({ width, height }).toEqual({ width: 1280, height: 640 });
+  });
+
+  it("returns 400 for a file that only starts like a JPEG", async () => {
+    const { id } = await steps.achieved();
+    const { status, body } = await steps.put(id, Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]));
+    expect([status, body]).toMatchObject([400, { error: { code: "VALIDATION_ERROR" } }]);
+    expect(folder.files()).toEqual([]);
+  });
+});
+
+// 1 人あたりの上限（data.md §3）。超えたら 429 PHOTO_LIMIT_REACHED（待っても解けないので Retry-After なし。api.md §3）
+describe("PUT /api/achievements/:id/photo and the limit per person", () => {
+  const limited = new OptionsApiClient(
+    new TestApp({ db: dbWrapper, photoFiles: new LocalPhotoFiles(uploadDir), photoQuota: { maxCount: 1, maxBytes: 1024 * 1024 } }).build(),
+  );
+
+  it("refuses a second photo, but still replaces the first one", async () => {
+    limited.use(api.cookie());
+    const first = await steps.achieved();
+    const second = await steps.achieved();
+    await limited.upload(`/api/achievements/${first.id}/photo`, JPEG, "a.jpg");
+    const { status, body, headers } = await limited.upload(`/api/achievements/${second.id}/photo`, JPEG, "b.jpg");
+    expect([status, body, headers["retry-after"]]).toMatchObject([429, { error: { code: "PHOTO_LIMIT_REACHED" } }, undefined]);
+    expect(folder.files()).toHaveLength(1);
+    expect(await limited.upload(`/api/achievements/${first.id}/photo`, JPEG, "c.jpg")).toMatchObject({ status: 200 });
+  });
+});
+
 describe("DELETE /api/achievements/:id/photo", () => {
   it("removes the photo and its file", async () => {
     const achievement = await steps.achieved();
@@ -205,7 +267,7 @@ describe("GET /api/photos", () => {
   // 行はあるのにファイルがない（消し損ねの逆）も 404
   it("returns 404 when the row points to a missing file", async () => {
     const { id: optionId } = await api.added("a");
-    await pool.query("INSERT INTO achievements (user_id, option_id, achieved_at, photo_filename) VALUES (1, $1, now(), 'gone.jpg')", [optionId]);
+    await pool.query("INSERT INTO achievements (user_id, option_id, achieved_at, photo_filename, photo_bytes) VALUES (1, $1, now(), 'gone.jpg', 1)", [optionId]);
     const { status, body } = await api.send((r) => r.get("/api/photos/gone.jpg"));
     expect([status, body]).toMatchObject([404, { error: { code: "NOT_FOUND" } }]);
   });

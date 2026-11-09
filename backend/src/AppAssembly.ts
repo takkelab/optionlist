@@ -31,7 +31,7 @@ import { AccountRepository } from "./repositories/AccountRepository";
 import { AchievementRepository } from "./repositories/AchievementRepository";
 import { EventRepository } from "./repositories/EventRepository";
 import { HealthRepository } from "./repositories/HealthRepository";
-import type { PhotoFiles } from "./repositories/LocalPhotoFiles";
+import type { PhotoFiles } from "./repositories/PhotoFiles";
 import { OptionRepository } from "./repositories/OptionRepository";
 import { OptionRowMapper } from "./repositories/OptionRowMapper";
 import { SuggestionRepository } from "./repositories/SuggestionRepository";
@@ -41,7 +41,9 @@ import { AccountHasher } from "./services/AccountHasher";
 import { AccountService } from "./services/AccountService";
 import type { SessionKeySource } from "./services/AccountService";
 import { AccountSettingsService } from "./services/AccountSettingsService";
-import { AchievementPhotoService } from "./services/AchievementPhotoService";
+import { AchievementPhotoService, DEFAULT_PHOTO_QUOTA } from "./services/AchievementPhotoService";
+import type { PhotoQuota } from "./services/AchievementPhotoService";
+import { SharpPhotoRebuilder } from "./services/PhotoRebuilder";
 import { AchievementService } from "./services/AchievementService";
 import type { Clock } from "./services/Clock";
 import { EventService } from "./services/EventService";
@@ -69,18 +71,23 @@ export type AssemblyDeps = {
   metricsToken: string;
   // 書き込みの回数の制限（api.md §6）。なければ DEFAULT_RATE_LIMITS。性能テストは同じ人で何百回も書くので緩める
   rateLimits?: RateLimits;
+  // 写真の 1 人あたりの上限（data.md §3）。なければ DEFAULT_PHOTO_QUOTA。テストは小さくして 429 を確かめる
+  photoQuota?: PhotoQuota;
   logger: Logger;
   // テストだけが足す controller（エラーを投げるルートなど）
   extraControllers?: Controller[];
 };
 
-export type RateLimits = { events: RateLimit; writes: RateLimit };
+export type RateLimits = { events: RateLimit; writes: RateLimit; photos: RateLimit };
 
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 // api.md §6 ※仮決め。POST /api/events は 1 つの IP から 1 分に 20 リクエスト、そのほかの書き込みは 1 アカウント 1 分に 120 回
+// 写真の保存はそれに加えて 1 アカウント 1 時間に 60 回（docs/decisions/0037）
 export const DEFAULT_RATE_LIMITS: RateLimits = {
   events: { limit: 20, windowMs: MINUTE_MS },
   writes: { limit: 120, windowMs: MINUTE_MS },
+  photos: { limit: 60, windowMs: HOUR_MS },
 };
 
 export interface AppFactory {
@@ -101,6 +108,7 @@ export class AppAssembly implements AppFactory {
   readonly #appOrigin: string | null;
   readonly #metricsToken: string;
   readonly #rateLimits: RateLimits;
+  readonly #photoQuota: PhotoQuota;
   readonly #logger: Logger;
   readonly #extraControllers: Controller[];
 
@@ -117,6 +125,7 @@ export class AppAssembly implements AppFactory {
     this.#appOrigin = deps.appOrigin;
     this.#metricsToken = deps.metricsToken;
     this.#rateLimits = deps.rateLimits ?? DEFAULT_RATE_LIMITS;
+    this.#photoQuota = deps.photoQuota ?? DEFAULT_PHOTO_QUOTA;
     this.#logger = logger;
     this.#extraControllers = extraControllers ?? [];
   }
@@ -144,8 +153,12 @@ export class AppAssembly implements AppFactory {
   }
 
   #rateLimit(requests: ApiRequests, user: SessionLocals): WriteRateLimit {
-    const { events, writes } = this.#rateLimits;
-    const limiters = { events: new MemoryRateLimiter(events, this.#clock), writes: new MemoryRateLimiter(writes, this.#clock) };
+    const { events, writes, photos } = this.#rateLimits;
+    const limiters = {
+      events: new MemoryRateLimiter(events, this.#clock),
+      writes: new MemoryRateLimiter(writes, this.#clock),
+      photos: new MemoryRateLimiter(photos, this.#clock),
+    };
     return new WriteRateLimit(limiters, requests, user);
   }
 
@@ -154,7 +167,14 @@ export class AppAssembly implements AppFactory {
     const cleanup = new PhotoCleanup(this.#photoFiles, this.#metrics, this.#logger);
     const options = new OptionService(new OptionRepository(this.#db, mapper), this.#clock, new GapSortOrderPlanner(), cleanup);
     const achievementStore = new AchievementRepository(this.#db, mapper);
-    const photos = new AchievementPhotoService(achievementStore, this.#photoFiles, cleanup, new PhotoFormat());
+    const photos = new AchievementPhotoService({
+      stores: achievementStore,
+      files: this.#photoFiles,
+      cleanup,
+      format: new PhotoFormat(),
+      rebuilder: new SharpPhotoRebuilder(),
+      quota: this.#photoQuota,
+    });
     const ids = new PathId();
     return [
       new HealthController(new HealthService(new HealthRepository(this.#db)), !this.#deployed),
@@ -162,7 +182,7 @@ export class AppAssembly implements AppFactory {
       new OptionsController({ input: new OptionInput(ids), options, user, accounts, cookie }),
       new SuggestionsController(new SuggestionService(new SuggestionRepository(this.#db, new SuggestionRowMapper())), ids, user),
       new AchievementsController(new OptionInput(ids), new AchievementService(achievementStore, this.#clock), user),
-      new AchievementPhotoController(ids, photos, this.#photoFiles.directory(), user),
+      new AchievementPhotoController(ids, photos, user),
       new EventsController(new EventInput(), new EventService(new EventRepository(this.#db), this.#clock)),
       new AccountController({ input: new AccountInput(), accounts: this.#accountSettings(cleanup), user, cookie }),
     ];

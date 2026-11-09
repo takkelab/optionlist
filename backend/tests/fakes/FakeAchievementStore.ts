@@ -1,5 +1,12 @@
 import type { Achievement } from "../../../shared/types";
-import type { AchievementStore, AchievementStores, StoredAchievement } from "../../src/repositories/AchievementRepository";
+import type {
+  AchievementStore,
+  AchievementStores,
+  PhotoChange,
+  PhotoUsage,
+  StoredAchievement,
+  StoredPhoto,
+} from "../../src/repositories/AchievementRepository";
 import { AppError } from "../../src/services/errors";
 
 // メモリ上の AchievementStore。options に当たるのは、コンストラクタで渡した ID だけ
@@ -7,7 +14,7 @@ import { AppError } from "../../src/services/errors";
 export class FakeAchievementStore implements AchievementStore, AchievementStores {
   readonly #users: (number | null)[] = [];
   readonly #optionIds: Set<number>;
-  readonly #photos = new Map<number, string>();
+  readonly #photos = new Map<number, StoredPhoto>();
   #rows: Achievement[] = [];
   #failWrites = false;
   #vanishAfterWrite = false;
@@ -28,7 +35,7 @@ export class FakeAchievementStore implements AchievementStore, AchievementStores
   }
 
   async ownsPhoto(filename: string): Promise<boolean> {
-    return [...this.#photos.values()].includes(filename);
+    return [...this.#photos.values()].some((photo) => photo.filename === filename);
   }
 
   async insert(optionId: number, achievedAt: Date): Promise<Achievement> {
@@ -42,19 +49,29 @@ export class FakeAchievementStore implements AchievementStore, AchievementStores
     if (this.#vanishAfterWrite && this.#written) return null;
     const achievement = this.#rows.find((row) => row.id === id);
     if (achievement === undefined) return null;
-    return { achievement, photoFilename: this.#photos.get(id) ?? null };
+    const photo = this.#photos.get(id);
+    return { achievement, photoFilename: photo === undefined ? null : photo.filename };
   }
 
-  async setPhoto(id: number, filename: string | null): Promise<void> {
+  async setPhoto(id: number, photo: StoredPhoto | null): Promise<PhotoChange | null> {
     if (this.#failWrites) throw new Error("UPDATE が失敗した");
+    if (!this.#rows.some((row) => row.id === id)) return null;
     this.#written = true;
-    if (filename === null) {
+    const before = this.#photos.get(id);
+    const previous = before === undefined ? null : before.filename;
+    if (photo === null) {
       this.#photos.delete(id);
       this.#rows = this.#rows.map((row) => (row.id === id ? { ...row, photoUrl: null } : row));
-      return;
+      return { previous };
     }
-    this.#photos.set(id, filename);
-    this.#rows = this.#rows.map((row) => (row.id === id ? { ...row, photoUrl: `/api/photos/${filename}` } : row));
+    this.#photos.set(id, photo);
+    this.#rows = this.#rows.map((row) => (row.id === id ? { ...row, photoUrl: `/api/photos/${photo.filename}` } : row));
+    return { previous };
+  }
+
+  async photoUsage(exceptId: number): Promise<PhotoUsage> {
+    const others = [...this.#photos].filter(([id]) => id !== exceptId);
+    return { count: others.length, bytes: others.reduce((sum, [, photo]) => sum + photo.bytes, 0) };
   }
 
   // setPhoto を失敗させる

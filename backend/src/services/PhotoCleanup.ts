@@ -1,4 +1,4 @@
-import type { PhotoFiles } from "../repositories/LocalPhotoFiles";
+import type { PhotoFiles } from "../repositories/PhotoFiles";
 import type { OrphanFileMetrics } from "../metrics/AppMetrics";
 
 export interface PhotoRemover {

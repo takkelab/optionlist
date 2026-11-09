@@ -8,6 +8,8 @@ export type AppSettings = {
   // /api/metrics のトークン。空なら /api/metrics はいつも 404
   metricsToken: string;
   ipHashSecret: string;
+  // 写真の Cloud Storage の入れ物の名前。null なら UPLOAD_DIR のフォルダに置く（手元・CI。api.md §5）
+  photoBucket: string | null;
 };
 
 export interface AppConfigSource {
@@ -16,7 +18,8 @@ export interface AppConfigSource {
 
 const APP_ENVS: readonly AppEnv[] = ["development", "test", "staging", "production"];
 // 確認用・本番で、ないと起動を止める値（docs/decisions/0050）
-const REQUIRED_WHEN_DEPLOYED = ["APP_ORIGIN", "METRICS_TOKEN", "IP_HASH_SECRET"] as const;
+// PHOTO_BUCKET がないと、写真が Cloud Run のディスク（再起動で消える）に置かれてしまう（docs/decisions/0051）
+const REQUIRED_WHEN_DEPLOYED = ["APP_ORIGIN", "METRICS_TOKEN", "IP_HASH_SECRET", "PHOTO_BUCKET"] as const;
 
 // 確認用・本番か（Secure の Cookie、エラーの中身を隠す、必須の環境変数。architecture.md §4.3）
 export interface DeployedCheck {
@@ -51,6 +54,7 @@ export class EnvAppConfig implements AppConfigSource {
       appOrigin: origin === "" ? null : this.#origin(origin),
       metricsToken: this.#value("METRICS_TOKEN"),
       ipHashSecret: this.#value("IP_HASH_SECRET"),
+      photoBucket: this.#value("PHOTO_BUCKET") === "" ? null : this.#value("PHOTO_BUCKET"),
     };
   }
 

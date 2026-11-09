@@ -15,7 +15,7 @@ export interface UserStore {
 }
 
 type FindRow = { created_at: Date; has_recovery_code: boolean };
-type PhotoRow = { photo_filename: string };
+type PhotoRow = { photo_filename: string | null };
 
 export class UserRepository implements UserStore {
   readonly #db: UserScopes;
@@ -46,15 +46,13 @@ export class UserRepository implements UserStore {
   }
 
   // 写真の名前を読むのと行を消すのを 1 つのトランザクションで行う（その間に付けた写真を取りこぼさない）
+  // 写真がまだない行も FOR UPDATE で押さえる（押さえない行には、消す間に写真が付きうる。docs/decisions/0051）
   async remove(userId: number): Promise<string[]> {
     const scoped = this.#db.forUser(userId);
     return scoped.run(async (tx) => {
-      const photos = (await tx.query(
-        "SELECT photo_filename FROM achievements WHERE user_id = $1 AND photo_filename IS NOT NULL FOR UPDATE",
-        [userId],
-      )) as PhotoRow[];
+      const photos = (await tx.query("SELECT photo_filename FROM achievements WHERE user_id = $1 FOR UPDATE", [userId])) as PhotoRow[];
       await tx.query("DELETE FROM users WHERE id = $1", [userId]);
-      return photos.map((row) => row.photo_filename);
+      return photos.flatMap((row) => (row.photo_filename === null ? [] : [row.photo_filename]));
     });
   }
 }

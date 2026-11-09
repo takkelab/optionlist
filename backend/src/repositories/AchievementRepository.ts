@@ -9,11 +9,18 @@ export interface AchievementStore {
   insert(optionId: number, achievedAt: Date): Promise<Achievement>;
   // 存在しなければ null
   find(id: number): Promise<StoredAchievement | null>;
-  // filename の null で写真を外す
-  setPhoto(id: number, filename: string | null): Promise<void>;
+  // null で写真を外す。前の写真の名前を返す（行を FOR UPDATE で押さえてから読むので、同時に置き換えても消し損ねない）
+  // 達成がなければ null
+  setPhoto(id: number, photo: StoredPhoto | null): Promise<PhotoChange | null>;
   // そのファイル名が、この人の達成の写真か（写真の配信。api.md §5）
   ownsPhoto(filename: string): Promise<boolean>;
+  // この人の写真の枚数と合計の大きさ。exceptId の達成の写真は数えない（置き換える写真。1 人あたりの上限。data.md §3）
+  photoUsage(exceptId: number): Promise<PhotoUsage>;
 }
+
+export type StoredPhoto = { filename: string; bytes: number };
+export type PhotoUsage = { count: number; bytes: number };
+export type PhotoChange = { previous: string | null };
 
 export interface AchievementStores {
   withUser<T>(userId: number | null, fn: (store: AchievementStore) => Promise<T>): Promise<T>;
@@ -63,8 +70,25 @@ class AchievementQueries implements AchievementStore {
     return row === undefined ? null : { achievement: this.#mapper.achievement(row), photoFilename: row.photo_filename };
   }
 
-  async setPhoto(id: number, filename: string | null): Promise<void> {
-    await this.#query("UPDATE achievements SET photo_filename = $2 WHERE user_id = $1 AND id = $3", [filename, id]);
+  // 副問い合わせの FOR UPDATE で行を押さえる。同時に来た別の置き換えは、前のものが COMMIT するまで待ち、その新しい名前を前の写真として受け取る
+  async setPhoto(id: number, photo: StoredPhoto | null): Promise<PhotoChange | null> {
+    const [row] = (await this.#query(
+      `UPDATE achievements a SET photo_filename = $2, photo_bytes = $3
+       FROM (SELECT id, photo_filename FROM achievements WHERE user_id = $1 AND id = $4 FOR UPDATE) old
+       WHERE a.id = old.id AND a.user_id = $1
+       RETURNING old.photo_filename AS previous`,
+      [photo === null ? null : photo.filename, photo === null ? null : photo.bytes, id],
+    )) as { previous: string | null }[];
+    return row === undefined ? null : { previous: row.previous };
+  }
+
+  // COUNT・SUM は BIGINT・NUMERIC なので文字列で返る
+  async photoUsage(exceptId: number): Promise<PhotoUsage> {
+    const [row] = (await this.#query(
+      "SELECT COUNT(photo_filename) AS count, COALESCE(SUM(photo_bytes), 0) AS bytes FROM achievements WHERE user_id = $1 AND id <> $2",
+      [exceptId],
+    )) as { count: string; bytes: string }[];
+    return { count: Number(row?.count ?? 0), bytes: Number(row?.bytes ?? 0) };
   }
 
   async ownsPhoto(filename: string): Promise<boolean> {

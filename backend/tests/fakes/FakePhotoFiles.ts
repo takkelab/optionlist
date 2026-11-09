@@ -1,24 +1,24 @@
-import type { PhotoExtension, PhotoFiles } from "../../src/repositories/LocalPhotoFiles";
+import type { PhotoFiles } from "../../src/repositories/PhotoFiles";
 
 // メモリ上の写真の置き場所。failRemoving で削除を失敗させる
 export class FakePhotoFiles implements PhotoFiles {
-  readonly #names = new Set<string>();
+  readonly #files = new Map<string, Buffer>();
   #nextId = 1;
   #removeFails = false;
 
-  async save(_bytes: Buffer, extension: PhotoExtension): Promise<string> {
-    const filename = `photo-${this.#nextId++}.${extension}`;
-    this.#names.add(filename);
+  async save(bytes: Buffer): Promise<string> {
+    const filename = `photo-${this.#nextId++}.jpg`;
+    this.#files.set(filename, bytes);
     return filename;
+  }
+
+  async read(filename: string): Promise<Buffer | null> {
+    return this.#files.get(filename) ?? null;
   }
 
   async remove(filename: string): Promise<void> {
     if (this.#removeFails) throw new Error("消せなかった");
-    this.#names.delete(filename);
-  }
-
-  directory(): string {
-    return "fake-photos-that-do-not-exist";
+    this.#files.delete(filename);
   }
 
   failRemoving(): void {
@@ -27,6 +27,6 @@ export class FakePhotoFiles implements PhotoFiles {
 
   // 今あるファイルの名前
   names(): string[] {
-    return [...this.#names];
+    return [...this.#files.keys()];
   }
 }

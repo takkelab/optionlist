@@ -35,8 +35,8 @@ describe("OptionService", () => {
 
   describe("OptionService.remove and the photos", () => {
     it("removes the photo files of the option after deleting it", async () => {
-      const kept = await files.save(Buffer.from("x"), "jpg");
-      const removed = await files.save(Buffer.from("x"), "jpg");
+      const kept = await files.save(Buffer.from("x"));
+      const removed = await files.save(Buffer.from("x"));
       const { id } = await service.create(USER, { title: "a", suggestionId: null });
       store.givePhotos(id, [removed]);
       await service.remove(USER, id);
@@ -44,7 +44,7 @@ describe("OptionService", () => {
     });
 
     it("leaves the files alone when the option does not exist", async () => {
-      const name = await files.save(Buffer.from("x"), "jpg");
+      const name = await files.save(Buffer.from("x"));
       store.givePhotos(99, [name]);
       await expect(service.remove(USER, 99)).rejects.toThrow("が見つからない");
       expect(files.names()).toEqual([name]);

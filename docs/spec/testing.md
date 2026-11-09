@@ -40,7 +40,9 @@
   - 回数の制限: 同じ IP からのアカウントの作成と復旧コードの入力が上限で 429 になり `Retry-After` が付くこと。合っているコードでも、上限を超えたら 429 のままで、コードは消費されないこと。上限の前の合わないコードは 404 であること。アカウントのない `POST /api/events` が、同じ IP から上限を超えると 429 になること
   - すべてのデータを消す: 行と写真のファイルが消え、Cookie が消えること。アカウントがなくても 204 になること
   - セキュリティ（docs/decisions/0038）: `Origin` が違う書き込みが 403 になること。`Content-Type` が JSON でない JSON の API が 400 になること。`/api/metrics` がトークンなし・違うトークンで 404 になること。`APP_ENV=production` で `/api/health/db` が `message` を返さないこと。500 の `message` に内部の情報が出ないこと
-  - 写真（docs/decisions/0037）: 位置情報の入った JPEG を送ると、保存されたファイルに EXIF が残っていないこと。写真の配信に `Cache-Control: private`・`Vary: Cookie`・CSP が付くこと。1 人あたりの上限で 429 になること
+  - 写真（docs/decisions/0037）: 位置情報の入った JPEG を送ると、保存されたファイルに EXIF が残っていないこと。長辺が 1280px に縮み、JPEG で保存されること。先頭だけ JPEG の読めないファイルが 400 になること。写真の配信に `Cache-Control: private`・`Vary: Cookie`・CSP・`Content-Disposition: inline` が付くこと。1 人あたりの上限で 429 `PHOTO_LIMIT_REACHED` になり、置き換えは上限でも通ること。保存の回数の制限で 429 と `Retry-After` になること
+  - 写真の置き場所（`tests/api/photo-files-contract.test.ts`）: `LocalPhotoFiles` と `GcsPhotoFiles` を同じテストで確かめる（保存して同じ中身が読める、名前がサーバーの UUID、消したら読めない、ない名前を読むと null で消しても失敗しない）。`GcsPhotoFiles` は fake-gcs-server につなぎ、API 越しの保存と配信も確かめる。手元で `GCS_EMULATOR_URL` がなければ GCS の分を飛ばし、CI では飛ばさずに失敗にする（docs/decisions/0051）
+  - テストで送る写真は本物の画像にする（`tests/fakes/TestImages.ts`。sharp で作り直すので、先頭のバイトだけの偽物は 400 になる）
 
 ## 3. 統合テスト（性能）
 - metrics.md §1 のデータを生成スクリプト（`backend/db/perf-data/`）で入れてから、metrics.md §4 の指標を計測して目標値と比べる
@@ -79,7 +81,7 @@
 push と PR ごとに次を実行する。どれかが失敗したら PR はマージしない。
 
 1. 依存のインストール、`npm audit`
-2. PostgreSQL 17 のサービスコンテナを起動し、ロール（data.md §4）を作って、dbmate でマイグレーション
+2. PostgreSQL 17 のサービスコンテナを起動し、ロール（data.md §4）を作って、dbmate でマイグレーション。fake-gcs-server を `docker run` で起動する（`npm --prefix backend run gcs:emulator`。サービスコンテナは起動の引数を渡せないため。docs/decisions/0051）
 3. 型チェック、lint（自作ルールを含む）、品質チェックスクリプト（metrics.md §2・§3 の静的な指標）
 4. 自作 lint ルールのテスト、マイグレーションテスト（RLS とロールの確かめを含む。§7）、UT、API テスト（分離テストを含む。カバレッジつき）
 5. 性能の統合テスト（metrics.md §4）

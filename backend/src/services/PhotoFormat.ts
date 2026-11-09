@@ -1,4 +1,5 @@
-import type { PhotoExtension } from "../repositories/LocalPhotoFiles";
+// 受け取る形式（api.md §5）。保存するのは作り直した JPEG だけ
+export type PhotoExtension = "jpg" | "png" | "webp";
 
 export interface PhotoFormatDetector {
   // JPEG / PNG / WebP でなければ null

@@ -2,7 +2,14 @@ import type { ApiError } from "../../../shared/types";
 
 export type ErrorCode = Exclude<ApiError["error"]["code"], "INTERNAL_ERROR">;
 
-const STATUS: Record<ErrorCode, number> = { VALIDATION_ERROR: 400, FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409, TOO_MANY_REQUESTS: 429 };
+const STATUS: Record<ErrorCode, number> = {
+  VALIDATION_ERROR: 400,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  TOO_MANY_REQUESTS: 429,
+  PHOTO_LIMIT_REACHED: 429,
+};
 
 // 想定内のエラー（api.md §3）。controllers・services が投げ、共通のエラーハンドラ（middleware/ErrorHandler）が
 // code に対応する status で応答する。どの層からも読むので services に置く（docs/decisions/0007）
@@ -14,8 +21,9 @@ export class AppError extends Error {
   readonly #retryAfterSeconds: number | null;
   readonly #extra: Record<string, number>;
 
-  constructor(code: ErrorCode, message: string, retryAfterSeconds: number | null = null, extra: Record<string, number> = {}) {
-    super(message);
+  // cause は元のエラー（応答には出さない。調べるとき用）
+  constructor(code: ErrorCode, message: string, retryAfterSeconds: number | null = null, extra: Record<string, number> = {}, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.#code = code;
     this.#retryAfterSeconds = retryAfterSeconds;
     this.#extra = { ...extra };

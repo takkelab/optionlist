@@ -9,7 +9,7 @@ export interface HitCounter {
   hit(key: string): { allowed: true } | { allowed: false; retryAfterSeconds: number };
 }
 
-export type WriteLimiters = { events: HitCounter; writes: HitCounter };
+export type WriteLimiters = { events: HitCounter; writes: HitCounter; photos: HitCounter };
 
 // 復旧コードの入力は DB の auth_attempts で数える（api.md §6）。ここでは数えない
 const COUNTED_IN_DB = "/api/account/restore";
@@ -41,14 +41,28 @@ export class WriteRateLimit implements Middleware {
         return;
       }
       const userId = this.#user.of(res);
-      if (userId === null) next();
-      else this.#check(this.#limiters.writes, `user:${userId}`, next);
+      if (userId === null) {
+        next();
+        return;
+      }
+      const counters = this.#requests.isPhotoUpload(req) ? [this.#limiters.writes, this.#limiters.photos] : [this.#limiters.writes];
+      this.#checkAll(counters, `user:${userId}`, next);
     };
   }
 
   #check(counter: HitCounter, key: string, next: (error?: unknown) => void): void {
-    const decision = counter.hit(key);
-    if (decision.allowed) next();
-    else next(new AppError("TOO_MANY_REQUESTS", "書き込みの回数が多すぎる。しばらく待ってからやり直す", decision.retryAfterSeconds));
+    this.#checkAll([counter], key, next);
+  }
+
+  // 写真の保存は、ほかの書き込みと同じ回数に加えて、写真の回数（1 時間に 60 回）でも数える（api.md §6）
+  #checkAll(counters: HitCounter[], key: string, next: (error?: unknown) => void): void {
+    for (const counter of counters) {
+      const decision = counter.hit(key);
+      if (!decision.allowed) {
+        next(new AppError("TOO_MANY_REQUESTS", "書き込みの回数が多すぎる。しばらく待ってからやり直す", decision.retryAfterSeconds));
+        return;
+      }
+    }
+    next();
   }
 }

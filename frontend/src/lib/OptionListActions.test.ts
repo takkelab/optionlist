@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Achievement, Option, OptionDetail, OptionStatus } from '../../../shared/types'
+import { PhotoRefusedError } from '../api/client'
 import type { OptionsApi, OptionUpdate } from '../api/client'
+import type { PhotoRefusal } from './PhotoRefusals'
 import { DoneListOrder } from './DoneListOrder'
 import { OptionListActions } from './OptionListActions'
 import type { FailureReporter } from './OptionListActions'
@@ -35,10 +37,16 @@ const samples = new Samples()
 class FakeApi implements OptionsApi {
   #fail = false
   #failDetail = false
+  #refusal: PhotoRefusal | null = null
   #latestPhotoUrl: string | null = null
 
   failNext(): void {
     this.#fail = true
+  }
+
+  // 次の写真の保存を 429 で断る
+  refusePhoto(reason: PhotoRefusal): void {
+    this.#refusal = reason
   }
 
   failDetail(): void {
@@ -76,6 +84,7 @@ class FakeApi implements OptionsApi {
 
   setPhoto(achievementId: number, _photo: Blob): Promise<Achievement> {
     if (this.#fail) return Promise.reject(new Error('PUT が失敗した'))
+    if (this.#refusal !== null) return Promise.reject(new PhotoRefusedError(this.#refusal, null))
     this.#latestPhotoUrl = '/api/photos/a.jpg'
     return Promise.resolve({ id: achievementId, optionId: 1, achievedAt: '2026-11-03T01:00:00.000Z', photoUrl: this.#latestPhotoUrl })
   }
@@ -216,6 +225,18 @@ describe('OptionListActions.setPhoto and removePhoto', () => {
     api.failNext()
     expect(await actions.setPhoto(2, 7, photo)).toBe(false)
     expect(reporter.messages()).toEqual(['写真を保存できませんでした'])
+    expect(holder.current().map((o) => o.latestPhotoUrl)).toEqual([null, null])
+  })
+
+  // 429 は、上限と回数の制限で文言を分ける（screens.md §7）
+  it.each([
+    ['full', '写真はこれ以上保存できません'],
+    ['busy', '少し時間をおいてから、もう一度お試しください'],
+  ] as const)('reports the refusal %s with its own message', async (reason, message) => {
+    const { api, reporter, holder, actions } = fixture.create()
+    api.refusePhoto(reason)
+    expect(await actions.setPhoto(2, 7, photo)).toBe(false)
+    expect(reporter.messages()).toEqual([message])
     expect(holder.current().map((o) => o.latestPhotoUrl)).toEqual([null, null])
   })
 

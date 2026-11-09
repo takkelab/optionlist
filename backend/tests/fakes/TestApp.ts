@@ -7,9 +7,10 @@ import type { Controller, Routes } from "../../src/controllers/http";
 import type { AppEnv } from "../../src/infra/AppConfig";
 import type { Database, UserScopes } from "../../src/infra/PgDatabase";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
-import type { PhotoFiles } from "../../src/repositories/LocalPhotoFiles";
+import type { PhotoFiles } from "../../src/repositories/PhotoFiles";
 import { RandomSessionKeys } from "../../src/services/AccountService";
 import type { SessionKeySource } from "../../src/services/AccountService";
+import type { PhotoQuota } from "../../src/services/AchievementPhotoService";
 import type { Clock } from "../../src/services/Clock";
 import { SystemClock } from "../../src/services/Clock";
 import { FakeDatabase } from "./FakeDatabase";
@@ -35,6 +36,8 @@ export type TestAppOptions = {
   // 既定は TEST_METRICS_TOKEN
   metricsToken?: string;
   rateLimits?: RateLimits;
+  // 写真の 1 人あたりの上限。既定は本番と同じ（DEFAULT_PHOTO_QUOTA）
+  photoQuota?: PhotoQuota;
 };
 
 // API テスト用に、server.ts と同じ組み立て（AppAssembly）をする。db を渡さなければ DB を使わない（FakeDatabase）
@@ -57,6 +60,7 @@ export class TestApp implements HttpApp {
       appOrigin: options.appOrigin === undefined ? TEST_ORIGIN : options.appOrigin,
       metricsToken: options.metricsToken ?? TEST_METRICS_TOKEN,
       rateLimits: options.rateLimits,
+      photoQuota: options.photoQuota,
       logger: this.#logger,
       extraControllers: controllers,
     });

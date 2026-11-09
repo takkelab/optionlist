@@ -1,5 +1,7 @@
 import type { Achievement, Option, OptionStatus } from '../../../shared/types'
+import { PhotoRefusedError } from '../api/client'
 import type { OptionsApi } from '../api/client'
+import type { PhotoRefusal } from './PhotoRefusals'
 import type { ListOrder } from './WishListOrder'
 
 // 失敗を知らせる先（画面では app/contexts の Notifier。lib は app を読めないので、使う形だけをここに書く）
@@ -25,6 +27,11 @@ export interface ListActions {
   removePhoto(id: number, achievementId: number): Promise<boolean>
   // やったリストへ移す・やりたいリストへ戻す。今の一覧からは外れる（screens.md §4・§6）
   move(id: number, status: OptionStatus): Promise<boolean>
+}
+
+const PHOTO_REFUSALS: Record<PhotoRefusal, string> = {
+  full: '写真はこれ以上保存できません',
+  busy: '少し時間をおいてから、もう一度お試しください',
 }
 
 const MOVE_FAILURE: Record<OptionStatus, string> = {
@@ -81,11 +88,20 @@ export class OptionListActions implements ListActions {
   }
 
   async setPhoto(id: number, achievementId: number, photo: Blob): Promise<boolean> {
-    const saved = await this.#run('写真を保存できませんでした', async () => {
+    try {
       await this.#api.setPhoto(achievementId, photo)
-    })
-    if (saved) await this.#refreshCard(id)
-    return saved
+    } catch (error) {
+      this.#reporter.error(this.#photoFailure(error), error)
+      return false
+    }
+    await this.#refreshCard(id)
+    return true
+  }
+
+  // 写真の 429 は、上限と回数の制限で文言を分ける（screens.md §7）
+  #photoFailure(error: unknown): string {
+    if (!(error instanceof PhotoRefusedError)) return '写真を保存できませんでした'
+    return PHOTO_REFUSALS[error.reason()]
   }
 
   async removePhoto(id: number, achievementId: number): Promise<boolean> {

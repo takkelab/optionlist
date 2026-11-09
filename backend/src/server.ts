@@ -1,4 +1,6 @@
 import { AppAssembly } from "./AppAssembly";
+import { Storage } from "@google-cloud/storage";
+import { GcsPhotoFiles } from "./repositories/GcsPhotoFiles";
 import { LocalPhotoFiles } from "./repositories/LocalPhotoFiles";
 import { AppEnvRules, EnvAppConfig } from "./infra/AppConfig";
 import { JsonLogger, ProcessLineWriter } from "./infra/JsonLogger";
@@ -18,13 +20,18 @@ const portGuard = new PortGuard(500);
 
 try {
   // 確認用・本番で APP_ORIGIN・METRICS_TOKEN・IP_HASH_SECRET がなければ、ここで止まる（docs/decisions/0050）
-  const settings = new EnvAppConfig(process.env, new AppEnvRules()).read();
+  const { photoBucket, ...settings } = new EnvAppConfig(process.env, new AppEnvRules()).read();
   const metrics = new PromMetrics();
+  // 確認用・本番は Cloud Storage の非公開の入れ物、手元は UPLOAD_DIR（api.md §5）。手元で GCS_EMULATOR_URL があれば fake-gcs-server へつなぐ
+  // （STORAGE_EMULATOR_HOST はライブラリが読んで URL がずれるので使わない。docs/decisions/0051）
+  const emulator = process.env.GCS_EMULATOR_URL ?? "";
+  const storage = new Storage(emulator === "" ? {} : { apiEndpoint: emulator, projectId: "optionlist-local" });
+  const photoFiles = photoBucket === null ? new LocalPhotoFiles(process.env.UPLOAD_DIR ?? "uploads") : new GcsPhotoFiles(storage.bucket(photoBucket));
   const app = new AppAssembly({
     // アプリは ol_app で接続する（RLS を受ける。data.md §4）
     db: new PgDatabase(new PgPoolFactory(process.env, logger, "APP_DATABASE_URL").create(), metrics),
     metrics,
-    photoFiles: new LocalPhotoFiles(process.env.UPLOAD_DIR ?? "uploads"),
+    photoFiles,
     clock: new SystemClock(),
     keys: new RandomSessionKeys(),
     ...settings,

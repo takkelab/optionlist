@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { PromMetrics } from "../../src/metrics/PromMetrics";
 import { AchievementPhotoService } from "../../src/services/AchievementPhotoService";
+import type { PhotoQuota } from "../../src/services/AchievementPhotoService";
+import { AppError } from "../../src/services/errors";
 import { PhotoCleanup } from "../../src/services/PhotoCleanup";
 import { PhotoFormat } from "../../src/services/PhotoFormat";
 import { FakeAchievementStore } from "../fakes/FakeAchievementStore";
 import { FakeLogger } from "../fakes/FakeLogger";
 import { FakePhotoFiles } from "../fakes/FakePhotoFiles";
+import { FakePhotoRebuilder } from "../fakes/FakePhotoRebuilder";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const USER = 7;
@@ -17,6 +20,17 @@ describe("AchievementPhotoService", () => {
   let metrics: PromMetrics;
   let logger: FakeLogger;
   let service: AchievementPhotoService;
+  const rebuilder = new FakePhotoRebuilder(100);
+  // 作り直した写真は 100 バイト
+  const build = (quota: PhotoQuota = { maxCount: 10, maxBytes: 1_000 }): AchievementPhotoService =>
+    new AchievementPhotoService({
+      stores: store,
+      files,
+      cleanup: new PhotoCleanup(files, metrics, logger),
+      format: new PhotoFormat(),
+      rebuilder,
+      quota,
+    });
 
   beforeEach(async () => {
     store = new FakeAchievementStore([1]);
@@ -24,22 +38,66 @@ describe("AchievementPhotoService", () => {
     files = new FakePhotoFiles();
     metrics = new PromMetrics();
     logger = new FakeLogger();
-    service = new AchievementPhotoService(store, files, new PhotoCleanup(files, metrics, logger), new PhotoFormat());
+    service = build();
   });
 
   // 配信してよいのは、その人の達成の写真だけ。アカウントがない人には store に聞かずに配らない（api.md §5）
   it("serves only the photo of the person's own achievement", async () => {
     await service.set(USER, 1, JPEG);
-    expect(await service.canServe(USER, "photo-1.jpg")).toBe(true);
-    expect(await service.canServe(USER, "photo-9.jpg")).toBe(false);
+    expect(await service.open(USER, "photo-1.jpg")).toEqual({ bytes: Buffer.alloc(100, 1), contentType: "image/jpeg" });
+    expect(await service.open(USER, "photo-9.jpg")).toBeNull();
     const asked = store.users().length;
-    expect(await service.canServe(null, "photo-1.jpg")).toBe(false);
+    expect(await service.open(null, "photo-1.jpg")).toBeNull();
     expect(store.users()).toHaveLength(asked);
   });
 
-  it("saves the photo and returns the achievement with its URL", async () => {
+  // 行はあるのにファイルがない（消し損ねの逆。data.md §6）
+  it("serves nothing when the row points to a missing file", async () => {
+    await service.set(USER, 1, JPEG);
+    await files.remove("photo-1.jpg");
+    expect(await service.open(USER, "photo-1.jpg")).toBeNull();
+  });
+
+  // 保存するのは作り直したものだけ（api.md §5）
+  it("saves the rebuilt photo and returns the achievement with its URL", async () => {
     expect(await service.set(USER, 1, JPEG)).toMatchObject({ id: 1, photoUrl: "/api/photos/photo-1.jpg" });
     expect(files.names()).toEqual(["photo-1.jpg"]);
+    expect(await files.read("photo-1.jpg")).toEqual(Buffer.alloc(100, 1));
+  });
+
+  it("writes no file for an image that cannot be rebuilt", async () => {
+    await expect(service.set(USER, 1, rebuilder.unreadable(JPEG))).rejects.toThrow("画像として読めない");
+    expect(files.names()).toEqual([]);
+  });
+
+  // 1 人あたりの上限（data.md §3）。数えるのは作り直した後の大きさ
+  it.each([
+    ["the count", { maxCount: 1, maxBytes: 1_000 }],
+    ["the total size", { maxCount: 10, maxBytes: 150 }],
+  ])("refuses a new photo over %s, writing no file", async (_name, quota) => {
+    service = build(quota);
+    await store.insert(1, NOW);
+    await service.set(USER, 1, JPEG);
+    const refused = service.set(USER, 2, JPEG);
+    await expect(refused).rejects.toMatchObject({ message: "写真はこれ以上保存できない" });
+    await expect(refused).rejects.toSatisfy((error: unknown) => error instanceof AppError && error.code() === "PHOTO_LIMIT_REACHED");
+    expect(files.names()).toEqual(["photo-1.jpg"]);
+  });
+
+  // 置き換える写真は数えない（上限ちょうどでも付け替えられる）
+  it("replaces a photo at the limit", async () => {
+    service = build({ maxCount: 1, maxBytes: 100 });
+    await service.set(USER, 1, JPEG);
+    expect(await service.set(USER, 1, JPEG)).toMatchObject({ photoUrl: "/api/photos/photo-2.jpg" });
+  });
+
+  // 形式は達成より先に確かめる（ない達成でも、写真でなければ 400。api.md §5）
+  it("checks the format before the achievement", async () => {
+    await expect(service.set(USER, 2, Buffer.from("<svg></svg>"))).rejects.toThrow("JPEG");
+  });
+
+  it("checks the achievement before rebuilding", async () => {
+    await expect(service.set(USER, 2, rebuilder.unreadable(JPEG))).rejects.toThrow("が見つからない");
   });
 
   it("replaces the photo and removes the old file", async () => {

@@ -20,6 +20,7 @@
 - 型チェック（backend・frontend・scripts・tools・e2e）: `npm run typecheck`
 - lint（architecture.md §2 の設計ルール）: `npm run lint`。自作ルールのテスト: `npm run test:lint-rules`
 - Backend テスト: `npm test`、単一ファイル: `npm --prefix backend run test:file -- tests/api/health.test.ts`（backend のフォルダで動く。`npm --prefix backend exec vitest` は今のフォルダで動いて `.env.test` を読めないので禁止。ロールとマイグレーションは流さないので、先に `npm --prefix backend run db:roles:test` と `db:migrate:test`）。マイグレーションテストだけ: `npm --prefix backend run test:migrations`
+- GcsPhotoFiles のテスト（`tests/api/photo-files-contract.test.ts`）: Docker Desktop を起動して `npm --prefix backend run gcs:emulator`（fake-gcs-server。止めるのは `docker stop optionlist-fake-gcs`）。`.env.test` に `GCS_EMULATOR_URL=http://localhost:4443` を書くと GCS の分も流れる（書かなければ手元では飛ばす。書いたのにエミュレーターがなければ落ちる。CI は必ず流す。docs/decisions/0051）
 - frontend の UT: `npm --prefix frontend run test:unit`（`src/lib/` だけ）
 - E2E: `npm run test:e2e`（テスト用 DB をマイグレーションし、frontend をビルドしてから Playwright。設定は `e2e/playwright.config.ts`、依存はルートの package.json。backend 8100・frontend 4174 を自分で起動する。結果は `e2e/results/`）
 - 性能テスト: `npm run test:perf`（`.env.test` の DB に性能用データを入れ直してから流す。結果は `backend/coverage/perf/results.json`、判定は `metrics:check`）

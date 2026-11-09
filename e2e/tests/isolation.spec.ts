@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
+import { TINY_PNG } from '../support/CompletionScreen'
 import { PgTestData } from '../support/TestData'
 import { WishListScreen } from '../support/WishListScreen'
 
 // testing.md §5 のシナリオ 11: 2 つのブラウザのコンテキスト（別々の Cookie）で、A の項目と写真が B から見えない（docs/decisions/0046）
 const data = new PgTestData()
-// backend は先頭のバイトで形式を見る（api.md §5）ので、JPEG の先頭だけのバイト列でよい
-const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)])
+// backend は sharp で作り直す（api.md §5）ので、本物の画像を送る
+const PHOTO = Buffer.from(TINY_PNG, 'base64')
 
 test.beforeEach(async () => {
   await data.reset()
@@ -27,7 +28,7 @@ test('A が追加した項目と付けた写真は、別の Cookie の B には�
   const achieved = await request.post(`/api/options/${option?.id}/achievements`)
   const { id: achievementId } = (await achieved.json()) as { id: number }
   const uploaded = await request.put(`/api/achievements/${achievementId}/photo`, {
-    multipart: { photo: { name: 'a.jpg', mimeType: 'image/jpeg', buffer: PHOTO } },
+    multipart: { photo: { name: 'a.png', mimeType: 'image/png', buffer: PHOTO } },
   })
   expect(uploaded.status()).toBe(200)
   const { photoUrl } = (await uploaded.json()) as { photoUrl: string }
