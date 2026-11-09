@@ -162,12 +162,12 @@ class OptionQueries implements OptionStore {
     return rows.length > 0;
   }
 
+  // 写真がまだない行も FOR UPDATE で押さえる（消す間に写真が付け替えられて、新しいファイルが残らないように。docs/decisions/0051）
   async photoFilenames(id: number): Promise<string[]> {
-    const rows = (await this.#query(
-      "SELECT photo_filename FROM achievements WHERE user_id = $1 AND option_id = $2 AND photo_filename IS NOT NULL",
-      [id],
-    )) as { photo_filename: string }[];
-    return rows.map((row) => row.photo_filename);
+    const rows = (await this.#query("SELECT photo_filename FROM achievements WHERE user_id = $1 AND option_id = $2 FOR UPDATE", [
+      id,
+    ])) as { photo_filename: string | null }[];
+    return rows.flatMap((row) => (row.photo_filename === null ? [] : [row.photo_filename]));
   }
 
   async pendingOrder(): Promise<SortOrderEntry[]> {
