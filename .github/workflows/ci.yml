@@ -70,7 +70,7 @@ jobs:
         run: npm run metrics:check
       - name: Upload metrics-report.json
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-report
           path: metrics-report.json
