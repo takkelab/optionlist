@@ -7,4 +7,6 @@ export interface PhotoFiles {
   read(filename: string): Promise<Buffer | null>;
   // すでにないファイルは失敗にしない
   remove(filename: string): Promise<void>;
+  // cutoff より前に置いたファイルの名前（削除のジョブが、どの行からも指されていない写真を探す。data.md §5）
+  listOlderThan(cutoff: Date): Promise<string[]>;
 }

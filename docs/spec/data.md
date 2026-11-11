@@ -199,9 +199,12 @@ RLS の中では「鍵から人を探す」ことができない（まだ誰か�
 | どの行からも指されていない写真のファイル | 置いてから 1 日 | 毎日のジョブ |
 | 本人が「すべてのデータを消す」を押したアカウント | すぐ | `DELETE /api/account`（api.md §6） |
 
-- ジョブは `backend/src/jobs/cleanup.ts`（Cloud Run Job。Cloud Scheduler が毎日 4 時〈日本時間〉に動かす）。`ol_cleanup` で接続する
-- アカウントを消すときは、先に写真のファイル名を読み、行を消してから（options・achievements は CASCADE で消える）ファイルを消す。ファイルを消せなかったら、ログ（`kind: orphan_file_error`）に出し、次の日のジョブの「行のない写真」で拾い直す
-- 消した件数は、種類ごとにログ（`kind: cleanup_result`）に出す（metrics.md §8）
+- ジョブは `backend/src/jobs/cleanup.ts`（Cloud Run Job `optionlist-<env>-cleanup`。Cloud Scheduler `optionlist-<env>-cleanup-daily` が毎日 4 時〈日本時間〉に動かす）。`ol_cleanup` で接続する（`CLEANUP_DATABASE_URL`）。手元は `npm --prefix backend run cleanup`
+- 時刻はジョブの開始時に 1 回だけ読み、すべての境目に使う。期限ちょうどのものは残す（`last_seen_at` がちょうど 5 年前の人は消さない。docs/decisions/0059）。5 年は暦で数える（PostgreSQL の `interval '5 years'`）。30 日・90 日・7 日・1 日は 24 時間 × 日数
+- 消す順番: アカウント → events → auth_attempts → 行のない写真
+- アカウントを消すときは、先に写真のファイル名を読み、行を消してから（options・achievements は CASCADE で消える）ファイルを消す。名前を読むのと行を消すのは 1 本の SQL で行う（データを変える CTE の外側は文の前の状態を見るので、消える前の achievements が読める）。`SELECT … FOR UPDATE` は使わない（RLS の UPDATE のポリシーが当たり、UPDATE を持たない `ol_cleanup` では行が見えない）。DELETE の条件は行を消す時点で見直されるので、途中で使い始めた人は消えない。ファイルを消せなかったら、ログ（`kind: orphan_file_error`）に出し、次の日のジョブの「行のない写真」で拾い直す（ジョブは成功のまま）
+- 行のない写真は、置いた時刻（Cloud Storage は `timeCreated`、手元はファイルの更新日時）が 1 日より前で、どの achievements の `photo_filename` にもないもの
+- 消した件数は、種類ごとにログ（`kind: cleanup_result`）に出す（metrics.md §8）。ID・ファイル名は出さない。DB のエラーや設定の誤り（`CLEANUP_DATABASE_URL` がない、`APP_ENV` が staging・production なのに `PHOTO_BUCKET` がない）で止まったら `kind: cleanup_failed` を出し、終了コード 1 で終わる（Job の実行が失敗になる）。アカウントの写真で消せなかったものは、同じ実行の「行のない写真」では試し直さない（次の日に拾う）
 
 ## 6. バックアップ（docs/decisions/0041）
 Cloud SQL の自動バックアップと時点復旧は、**インスタンス全体**が単位になる。インスタンスは確認用・今後のアプリと共用している（docs/decisions/0035）ので、戻すときに共用のインスタンスをその場で巻き戻さない。

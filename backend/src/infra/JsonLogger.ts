@@ -50,8 +50,8 @@ export class JsonLogger implements Logger {
   }
 
   #line(severity: Severity, entry: LogEntry): string {
-    const { kind, message, error, route, status, durationMs } = entry;
-    const fields = { severity, message: this.#redact(message), kind, route, status, durationMs };
+    const { kind, message, error, route, status, durationMs, counts } = entry;
+    const fields = { severity, message: this.#redact(message), kind, route, status, durationMs, counts };
     const line = error === undefined ? fields : { ...fields, error: this.#error(error) };
     return JSON.stringify(line);
   }

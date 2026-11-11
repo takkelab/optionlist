@@ -7,8 +7,9 @@ import { ContainerDatabaseUrl, FetchHttpGetter, ImageSmokeChecks } from "./lib/i
 
 const image = process.argv[2];
 const appDatabaseUrl = process.env.APP_DATABASE_URL ?? "";
-if (image === undefined || appDatabaseUrl === "" || (process.env.DATABASE_URL ?? "") === "") {
-  console.error("使い方: npm run smoke:image -- <イメージ>（APP_DATABASE_URL・DATABASE_URL が要る。手元は backend/.env.test から読む）");
+const cleanupDatabaseUrl = process.env.CLEANUP_DATABASE_URL ?? "";
+if (image === undefined || appDatabaseUrl === "" || cleanupDatabaseUrl === "" || (process.env.DATABASE_URL ?? "") === "") {
+  console.error("使い方: npm run smoke:image -- <イメージ>（APP_DATABASE_URL・DATABASE_URL・CLEANUP_DATABASE_URL が要る。手元は backend/.env.test から読む）");
   process.exit(1);
 }
 
@@ -93,7 +94,22 @@ const migrateOnce = (): boolean => {
   return run.status === 0;
 };
 
+// 削除のジョブの Cloud Run Job と同じコマンドを流す（data.md §5）。jobs/ がイメージに入り、ol_cleanup でつないで最後まで流れることを確かめる
+// PHOTO_BUCKET は渡さない（Cloud Storage にはつながない。写真はイメージの中の空のフォルダを見る）。テスト用 DB の期限切れの行は消えてよい
+const cleanupOnce = (): boolean => {
+  const run = docker([
+    "run", "--rm", "--add-host=host.docker.internal:host-gateway",
+    "-e", `CLEANUP_DATABASE_URL=${new ContainerDatabaseUrl().rewrite(cleanupDatabaseUrl)}`,
+    image, "node", "--import", "tsx", "--max-semi-space-size=4", "src/jobs/cleanup.ts",
+  ]);
+  const ok = run.status === 0 && run.stdout.includes('"kind":"cleanup_result"');
+  if (ok) console.log("✅ 削除のジョブ（cleanup の Job のコマンド）");
+  else console.error(`❌ 削除のジョブが終了コード ${run.status} で終わった（または cleanup_result を出さなかった）\n${run.stdout}${run.stderr}`);
+  return ok;
+};
+
 const migrated = migrateOnce();
+const cleaned = cleanupOnce();
 const hidden = await runOnce("PUBLIC_INDEXING なし", [], (checks) => checks.hidden());
 const indexed = await runOnce("PUBLIC_INDEXING=true", ["PUBLIC_INDEXING=true"], (checks) => checks.indexed());
-process.exit(migrated && hidden && indexed ? 0 : 1);
+process.exit(migrated && cleaned && hidden && indexed ? 0 : 1);

@@ -9,10 +9,10 @@ import type { EnvName } from "../infra/config.ts";
 import { CloudSqlProxy, readSecret } from "../infra/lib/cloud-sql.ts";
 import { CliGcloud, readJson } from "../infra/lib/gcloud.ts";
 import {
-  bucketProblems, databaseProblems, expectedGrants, githubProblems, instanceProblems, isProjectConvenience, jobProblems, logSinkProblems, policyProblems,
-  projectPolicyProblems, providerProblems, secretLocationProblems, serviceProblems,
+  bucketProblems, cleanupJobProblems, databaseProblems, expectedGrants, githubProblems, instanceProblems, isProjectConvenience, jobProblems, logSinkProblems,
+  policyProblems, projectPolicyProblems, providerProblems, schedulerProblems, secretLocationProblems, serviceProblems,
 } from "./lib/infra-checks.ts";
-import type { Bucket, DatabaseFacts, Policy, Provider, RunJob, RunService, Secret, SqlInstance } from "./lib/infra-checks.ts";
+import type { Bucket, DatabaseFacts, Policy, Provider, RunJob, RunService, SchedulerJob, Secret, SqlInstance } from "./lib/infra-checks.ts";
 import { spawnSync } from "node:child_process";
 
 const target = process.argv[2];
@@ -91,6 +91,10 @@ const checkEnv = async (env: EnvName): Promise<string[]> => {
     ...policyProblems(`${c.service} の IAM`, policy(["run", "services", "get-iam-policy", c.service], R), grants.service),
     ...jobProblems(env, readJson<RunJob>(gcloud, ["run", "jobs", "describe", c.migrateJob], R)),
     ...policyProblems(`${c.migrateJob} の IAM`, policy(["run", "jobs", "get-iam-policy", c.migrateJob], R), grants.job),
+    // 削除のジョブと、それを毎日 4 時に動かす Cloud Scheduler（data.md §5）
+    ...cleanupJobProblems(env, readJson<RunJob>(gcloud, ["run", "jobs", "describe", c.cleanupJob], R)),
+    ...policyProblems(`${c.cleanupJob} の IAM`, policy(["run", "jobs", "get-iam-policy", c.cleanupJob], R), grants.cleanupJob),
+    ...schedulerProblems(env, readJson<SchedulerJob>(gcloud, ["scheduler", "jobs", "describe", c.cleanupScheduler], { ...P, location: REGION })),
     ...bucketProblems(env, readJson<Bucket>(gcloud, ["storage", "buckets", "describe", `gs://${c.bucket}`], P)),
     ...policyProblems(`${c.bucket} の IAM`, policy(["storage", "buckets", "get-iam-policy", `gs://${c.bucket}`], P), grants.bucket, isProjectConvenience),
     ...grants.secrets.flatMap(([secret, expected]) => [

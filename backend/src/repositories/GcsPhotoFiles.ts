@@ -37,6 +37,17 @@ export class GcsPhotoFiles implements PhotoFiles {
     await file.delete({ ignoreNotFound: true });
   }
 
+  // 置いた時刻は入れ物の timeCreated で見る（getFiles はページをまたいで全部読む）
+  async listOlderThan(cutoff: Date): Promise<string[]> {
+    const [files] = await this.#bucket.getFiles();
+    return files
+      .filter(({ metadata }) => {
+        const created = metadata.timeCreated;
+        return created !== undefined && new Date(created) < cutoff;
+      })
+      .map((file) => file.name);
+  }
+
   #isNotFound(error: unknown): boolean {
     return error instanceof Error && "code" in error && error.code === NOT_FOUND;
   }

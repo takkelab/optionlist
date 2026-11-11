@@ -39,6 +39,13 @@ describe("JsonLogger", () => {
     expect(line).not.toContain(TITLE);
   });
 
+  it("writes the counts of the cleanup job", () => {
+    const writer = new FakeLineWriter();
+    new JsonLogger(writer).info({ kind: "cleanup_result", message: "消した", counts: { events: 3, orphanPhotos: 0 } });
+    const [line = ""] = writer.outLines();
+    expect(JSON.parse(line)).toEqual({ severity: "INFO", message: "消した", kind: "cleanup_result", counts: { events: 3, orphanPhotos: 0 } });
+  });
+
   it("does not let keys outside the allowed fields into the line", () => {
     const writer = new FakeLineWriter();
     const entry = { kind: "orphan_file_error" as const, message: "x", title: TITLE, cookie: `ol_session=${SESSION_KEY}` };

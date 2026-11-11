@@ -121,7 +121,7 @@ CI では判定しない。アラートは Cloud Monitoring からメールで�
 | 5xx の割合（5 分間） | 5% 以下 | アラート |
 | `kind: unhandled_error`・`kind: orphan_file_error` のログ | 0 件 | 1 件でもアラート |
 | `client_error`（1 時間） | 50 件以下 | アラート（1 時間ごとのジョブが数えてログに出す） |
-| 削除のジョブ（data.md §5） | 毎日成功する | 失敗か、26 時間動いていなければアラート。消した件数は `kind: cleanup_result` のログで見る |
+| 削除のジョブ（data.md §5） | 毎日成功する | 失敗か、26 時間動いていなければアラート。消した件数は `kind: cleanup_result` のログの `counts`（`inactiveAccounts`・`emptyAccounts`・`accountPhotos`・`events`・`authAttempts`・`orphanPhotos`）で見る。止まったときは `kind: cleanup_failed` |
 | バックアップの書き出し（data.md §6） | 毎週成功する | 失敗か、8 日動いていなければアラート |
 | 復旧の訓練（`npm run ops:restore-drill -- production`） | 四半期に 1 回（最初は公開の 1 段目）。その場で取ったバックアップを新しい一時的なインスタンスに戻し、バックアップの前後に残っていた本番の利用者の表の ID がすべて戻り（それが空なら失敗）、前後で写真が変わっていない達成で「行があるのに写真がない」が 0 件（data.md §6） | `docs/ops/restore-drills.md` に書く |
 | 月の費用 | 3,000 円以内（docs/decisions/0035） | 予算の 50・90・100% でアラート |

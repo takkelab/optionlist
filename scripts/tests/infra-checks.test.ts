@@ -47,16 +47,20 @@ describe("policyProblems", () => {
   });
 
   it("プロジェクトの単位は、この環境のサービスアカウントだけを見る", () => {
-    const { run, migrate, deploy } = envConfig("staging").serviceAccounts;
-    const ok: Grant[] = [["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`], ["roles/owner", "user:me@example.com"]];
+    const { run, migrate, cleanup, deploy } = envConfig("staging").serviceAccounts;
+    const ok: Grant[] = [
+      ["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`],
+      ["roles/cloudsql.client", `serviceAccount:${cleanup}`], ["roles/owner", "user:me@example.com"]];
     assert.deepEqual(projectPolicyProblems("staging", toPolicy(ok)), []);
     assert.equal(projectPolicyProblems("staging", toPolicy([...ok, ["roles/run.admin", `serviceAccount:${deploy}`]])).length, 1);
   });
 
   // サービスアカウントを通さずに、GitHub からの principalSet にプロジェクトの単位で権限を付けると、deploy_target の条件を素通りする
   it("GitHub からの principalSet にプロジェクトの単位で権限があれば違反", () => {
-    const { run, migrate } = envConfig("staging").serviceAccounts;
-    const ok: Grant[] = [["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`]];
+    const { run, migrate, cleanup } = envConfig("staging").serviceAccounts;
+    const ok: Grant[] = [
+      ["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`],
+      ["roles/cloudsql.client", `serviceAccount:${cleanup}`]];
     const member = "principalSet://iam.googleapis.com/projects/55327626788/locations/global/workloadIdentityPools/github/attribute.deploy_target/staging";
     assert.equal(projectPolicyProblems("staging", toPolicy([...ok, ["roles/run.admin", member]])).length, 1);
   });
@@ -210,12 +214,14 @@ describe("databaseProblems", () => {
     { name: "ol_app_staging", login: true, createdb: false },
     { name: "ol_migrator", login: false, createdb: false },
     { name: "ol_migrator_staging", login: true, createdb: false },
+    { name: "ol_cleanup", login: false, createdb: false },
+    { name: "ol_cleanup_staging", login: true, createdb: false },
     { name: "ol_owner_staging", login: false, createdb: false },
   ];
   const good = {
     rlsViolations: [["no_bypassrls_or_superuser", []]] as [string, unknown[]][],
     owner: "ol_owner_staging",
-    connectGrantees: ["ol_owner_staging", "postgres", "ol_migrator_staging", "ol_app_staging"],
+    connectGrantees: ["ol_owner_staging", "postgres", "ol_migrator_staging", "ol_app_staging", "ol_cleanup_staging"],
     roles,
   };
 
