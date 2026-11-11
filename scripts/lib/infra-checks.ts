@@ -284,6 +284,8 @@ export const expectedGrants = (env: EnvName) => {
       [c.secrets.ipHashSecret, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.databaseUrl, [["roles/secretmanager.secretAccessor", sa(migrate)]]],
       [c.secrets.cleanupDatabaseUrl, [["roles/secretmanager.secretAccessor", sa(cleanup)]]],
+      // metrics:usage -- --env が手元で読むだけ（プロジェクトの持ち主の自分）。誰にも付けない（metrics.md §6）
+      [c.secrets.metricsDatabaseUrl, []],
     ] as [string, Grant[]][],
     runtimeAccounts: [
       [run, [["roles/iam.serviceAccountUser", sa(deploy)]]],
@@ -319,7 +321,7 @@ export const databaseProblems = (env: EnvName, facts: DatabaseFacts): string[] =
   // 持ち主は環境ごとの ol_owner_<env>。ol_migrator（両方の環境で同じロール）が持ち主だと、確認用から本番の DB の権限を変えられる（docs/decisions/0056）
   if (facts.owner !== c.roles.owner) problems.push(`${c.database}: 持ち主が ${c.roles.owner} でない（${facts.owner}）`);
   // CONNECT は、持ち主と、この環境のログイン用のロールと、管理用のユーザー（postgres。どのみち持ち主に SET ROLE できる）だけ
-  const allowed = new Set([c.roles.owner, "postgres", c.roles.migrator, c.roles.app, c.roles.cleanup, `ol_metrics_${env}`]);
+  const allowed = new Set([c.roles.owner, "postgres", c.roles.migrator, c.roles.app, c.roles.cleanup, c.roles.metrics]);
   for (const grantee of facts.connectGrantees) if (!allowed.has(grantee)) problems.push(`${c.database}: ${grantee} が CONNECT できる`);
   for (const role of facts.roles) {
     const envLogin = /^ol_[a-z]+_(staging|production)$/.test(role.name) && !role.name.startsWith("ol_owner_");
@@ -327,6 +329,7 @@ export const databaseProblems = (env: EnvName, facts: DatabaseFacts): string[] =
     if (!envLogin && role.login) problems.push(`${role.name}: グループのロールなのにログインできる（ログインは ${role.name}_<env> で行う）`);
     if (role.createdb) problems.push(`${role.name}: CREATEDB がある（確認用・本番では DB を作らない）`);
   }
-  for (const name of [c.roles.migrator, c.roles.app, c.roles.cleanup]) if (!facts.roles.some((r) => r.name === name)) problems.push(`${name} がない`);
+  // ol_metrics_<env> は metrics:usage -- --env がつなぐ（metrics.md §6）
+  for (const name of [c.roles.migrator, c.roles.app, c.roles.cleanup, c.roles.metrics]) if (!facts.roles.some((r) => r.name === name)) problems.push(`${name} がない`);
   return problems;
 };

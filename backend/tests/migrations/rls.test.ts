@@ -7,13 +7,17 @@ import { ShortLivedConnection } from "../fakes/ShortLivedConnection";
 // testing.md §7 の 2。最新までマイグレーションした DB の pg_catalog を読んで、RLS・ロール・認証の関数を確かめる
 // マイグレーションのテストと同じ <テスト用 DB 名>_migrations を使う（ファイルは並列に流れない。vitest.config.ts）
 // 「RLS coverage」の失敗の数が metrics.md §2 の「RLS の付け忘れ」になる（scripts/lib/command-collector.ts）
-if (!process.env.DATABASE_URL || !process.env.APP_DATABASE_URL || !process.env.ADMIN_DATABASE_URL) {
-  throw new Error("DATABASE_URL・APP_DATABASE_URL・ADMIN_DATABASE_URL が未設定です。backend/.env.test.example を参考に .env.test を作ってください");
+if (!process.env.DATABASE_URL || !process.env.APP_DATABASE_URL || !process.env.ADMIN_DATABASE_URL || !process.env.METRICS_DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL・APP_DATABASE_URL・ADMIN_DATABASE_URL・METRICS_DATABASE_URL が未設定です。backend/.env.test.example を参考に .env.test を作ってください（足したら db:roles:test を流し直す）",
+  );
 }
 const migratorUrl = new URL(process.env.DATABASE_URL);
 migratorUrl.pathname = `${migratorUrl.pathname}_migrations`;
 const appUrl = new URL(process.env.APP_DATABASE_URL);
 appUrl.pathname = migratorUrl.pathname;
+const metricsUrl = new URL(process.env.METRICS_DATABASE_URL);
+metricsUrl.pathname = migratorUrl.pathname;
 // ロールの属性・メンバーシップ・持ち主の違反を入れる検査だけが使う（superuser。入れた違反はトランザクションで戻す）
 const adminUrl = new URL(process.env.ADMIN_DATABASE_URL);
 adminUrl.pathname = migratorUrl.pathname;
@@ -254,6 +258,33 @@ describe("RLS for ol_app", () => {
       expect(after).toEqual([{ n: "0" }]);
     } finally {
       await fresh.end();
+    }
+  });
+});
+
+// ol_metrics は集計のビューだけを読み、表は 1 つも読めない（docs/decisions/0043。testing.md §7）
+// ビューは持ち主の ol_definer の権限と USING (true) のポリシーで読むので、RLS で 0 件にならず 2 人分を数える
+describe("ol_metrics", () => {
+  const metrics = new pg.Client({ connectionString: metricsUrl.toString() });
+
+  beforeAll(async () => {
+    await metrics.connect();
+  });
+
+  afterAll(async () => {
+    await metrics.end();
+  });
+
+  it.each(tables)("cannot read the table %s", async (table) => {
+    // 表の名前は pg_class から読んだもの（入力ではない）
+    await expect(metrics.query(`SELECT 1 FROM "${table}" LIMIT 1`)).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("reads the usage views, counting every user's rows", async () => {
+    const { rows } = await metrics.query("SELECT active_users, achievers, achievements FROM usage_periods WHERE period = 'week'");
+    expect(rows).toEqual([{ active_users: "2", achievers: "2", achievements: "2" }]);
+    for (const view of ["usage_retention", "usage_stale_pending", "usage_client_error_messages"]) {
+      await expect(metrics.query(`SELECT * FROM ${view}`)).resolves.toBeDefined();
     }
   });
 });

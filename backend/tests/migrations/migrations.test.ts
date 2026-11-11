@@ -24,7 +24,7 @@ const stepwise = new DbmateCli(url.toString(), stepDir);
 
 // DB を消して作り直す前準備。手元で npm test の直後に流すと 10 秒（既定）を超えることがある
 const HOOK_TIMEOUT_MS = 60_000;
-const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], functions: [], rowCounts: [] };
+const EMPTY = { columns: [], indexes: [], foreignKeys: [], checks: [], functions: [], views: [], privileges: [], rowCounts: [] };
 
 afterAll(async () => {
   await all.drop();
@@ -192,6 +192,15 @@ describe("schema after all migrations", () => {
       "auth_find_user(p_session_hash bytea) RETURNS TABLE(user_id bigint, last_seen_at timestamp with time zone) OWNER ol_definer SECURITY DEFINER",
       "auth_restore(p_code_hash bytea, p_new_session_hash bytea, p_ip_hash bytea, p_current_user_id bigint, p_replace boolean) RETURNS TABLE(status text, user_id bigint, retry_after_seconds integer, local_item_count integer) OWNER ol_definer SECURITY DEFINER",
     ]);
+  });
+
+  // 集計のビュー（data.md §4、metrics.md §6）。持ち主は ol_definer で、読めるのは ol_metrics だけ
+  it("has the usage views owned by ol_definer and readable only by ol_metrics", async () => {
+    const { views, privileges } = await snapshot.take();
+    const names = ["usage_client_error_messages", "usage_periods", "usage_retention", "usage_stale_pending"];
+    expect(views).toEqual(names.map((name) => `${name} OWNER ol_definer`));
+    expect(privileges.filter((p) => p.startsWith("usage_"))).toEqual(names.map((name) => `${name} ol_metrics: SELECT`));
+    expect(privileges).toContain("events ol_definer: SELECT");
   });
 
   // 絵文字を入れるため UTF8（data.md §1）

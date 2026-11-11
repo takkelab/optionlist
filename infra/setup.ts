@@ -101,6 +101,8 @@ const db = async (env: EnvName): Promise<void> => {
   ensureSecret(c.secrets.databaseUrl, () => socketDatabaseUrl(c.roles.migrator, newSecretValue(), c.database));
   ensureSecret(c.secrets.appDatabaseUrl, () => socketDatabaseUrl(c.roles.app, newSecretValue(), c.database));
   ensureSecret(c.secrets.cleanupDatabaseUrl, () => socketDatabaseUrl(c.roles.cleanup, newSecretValue(), c.database));
+  // 利用状況（metrics.md §6）。手元から Proxy 越しに読むだけだが、ほかと同じ形で置き、パスワードだけを取り出して使う
+  ensureSecret(c.secrets.metricsDatabaseUrl, () => socketDatabaseUrl(c.roles.metrics, newSecretValue(), c.database));
   if (dryRun) {
     console.log(`▶ Cloud SQL Auth Proxy を起動し、npm --prefix backend run db:roles:cloud -- --env ${env}`);
     return;
@@ -111,18 +113,19 @@ const db = async (env: EnvName): Promise<void> => {
     const migrator = passwordOf(readSecret(gcloud, c.secrets.databaseUrl));
     const app = passwordOf(readSecret(gcloud, c.secrets.appDatabaseUrl));
     const cleanup = passwordOf(readSecret(gcloud, c.secrets.cleanupDatabaseUrl));
+    const metrics = passwordOf(readSecret(gcloud, c.secrets.metricsDatabaseUrl));
     console.log(`▶ npm --prefix backend run db:roles:cloud -- --env ${env}（Proxy 越し）`);
-    // 手元のシェルに残った接続先（CLEANUP_DATABASE_URL など）を RoleSetup に読ませない
-    const { CLEANUP_DATABASE_URL: _cleanup, METRICS_DATABASE_URL: _metrics, ...inherited } = process.env;
+    // 接続先はすべて下で渡す。手元のシェルに残った値は、下で上書きされる
     const result = spawnSync(`npm --prefix backend run -s db:roles:cloud -- --env ${env}`, {
       shell: true,
       stdio: "inherit",
       env: {
-        ...inherited,
+        ...process.env,
         ADMIN_DATABASE_URL: proxy.url("postgres", admin, "postgres"),
         DATABASE_URL: proxy.url(c.roles.migrator, migrator, c.database),
         APP_DATABASE_URL: proxy.url(c.roles.app, app, c.database),
         CLEANUP_DATABASE_URL: proxy.url(c.roles.cleanup, cleanup, c.database),
+        METRICS_DATABASE_URL: proxy.url(c.roles.metrics, metrics, c.database),
       },
     });
     if (result.status !== 0) throw new Error("db:roles:cloud が失敗した");

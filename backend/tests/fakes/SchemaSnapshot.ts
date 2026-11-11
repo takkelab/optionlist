@@ -7,6 +7,9 @@ export type Snapshot = {
   checks: string[];
   // 関数（認証の関数など）。関数だけを足すマイグレーションでも、up と down の差が見えるように
   functions: string[];
+  // ビュー（集計のビューなど）の持ち主と、表・ビューの権限。ビューや GRANT だけを足すマイグレーションでも差が見えるように
+  views: string[];
+  privileges: string[];
   rowCounts: string[];
 };
 
@@ -20,6 +23,8 @@ type ForeignKeyRow = { tableName: string; definition: string; constraintName: st
 type TableRow = { tableName: string };
 type FunctionRow = { name: string; args: string; result: string; owner: string; definer: string };
 type CountRow = { n: number };
+type ViewRow = { name: string; owner: string };
+type PrivilegeRow = { name: string; grantee: string; privileges: string };
 
 // dbmate の管理表。rollback しても残るので比べない
 const IGNORED_TABLE = "schema_migrations";
@@ -39,8 +44,31 @@ export class SchemaSnapshot implements SchemaReader {
       foreignKeys: await this.#constraints("f"),
       checks: await this.#constraints("c"),
       functions: await this.#functions(),
+      views: await this.#views(),
+      privileges: await this.#privileges(),
       rowCounts: await this.#rowCounts(),
     };
+  }
+
+  async #views(): Promise<string[]> {
+    const rows = await this.#sql.rows<ViewRow>(
+      "SELECT viewname AS name, viewowner AS owner FROM pg_views WHERE schemaname = 'public'",
+    );
+    return rows.map((r) => `${r.name} OWNER ${r.owner}`).sort();
+  }
+
+  // 表・ビューごとの「受け取ったロール: 権限」。持ち主が自分に持つ権限は数えない（作っただけで付く）
+  async #privileges(): Promise<string[]> {
+    const rows = await this.#sql.rows<PrivilegeRow>(
+      `SELECT c.relname AS name, CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END AS grantee,
+              string_agg(a.privilege_type, ',' ORDER BY a.privilege_type) AS privileges
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace, aclexplode(c.relacl) a
+        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v') AND c.relname <> $1 AND a.grantee <> c.relowner
+        GROUP BY c.relname, a.grantee`,
+      [IGNORED_TABLE],
+    );
+    return rows.map((r) => `${r.name} ${r.grantee}: ${r.privileges}`).sort();
   }
 
   // 名前・引数・戻り値・持ち主・SECURITY DEFINER か

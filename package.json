@@ -9,7 +9,7 @@
     "test:e2e": "npm --prefix backend run -s db:migrate:test && npm --prefix frontend run -s build && playwright test -c e2e",
     "test:scripts": "node --test \"scripts/tests/*.test.ts\"",
     "metrics:check": "node scripts/metrics-check.ts",
-    "metrics:usage": "node --env-file=backend/.env scripts/metrics-usage.ts",
+    "metrics:usage": "node --env-file-if-exists=backend/.env scripts/metrics-usage.ts",
     "check:pr": "node scripts/check-pr.ts",
     "pr:merge": "node scripts/merge-pr.ts",
     "infra:setup": "node infra/setup.ts",

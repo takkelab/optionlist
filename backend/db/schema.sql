@@ -324,6 +324,20 @@ ALTER TABLE public.themes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: usage_client_error_messages; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.usage_client_error_messages AS
+ SELECT (payload ->> 'message'::text) AS message,
+    count(*) AS errors
+   FROM public.events e
+  WHERE (((type)::text = 'client_error'::text) AND (received_at >= ((date_trunc('day'::text, (now() AT TIME ZONE 'Asia/Tokyo'::text)) - ((27)::double precision * '1 day'::interval)) AT TIME ZONE 'Asia/Tokyo'::text)) AND (received_at < now()))
+  GROUP BY (payload ->> 'message'::text)
+  ORDER BY (count(*)) DESC, (payload ->> 'message'::text)
+ LIMIT 3;
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -336,6 +350,76 @@ CREATE TABLE public.users (
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: usage_periods; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.usage_periods AS
+ WITH bounds AS (
+         SELECT p.period,
+            p.days,
+            ((date_trunc('day'::text, (now() AT TIME ZONE 'Asia/Tokyo'::text)) - (((p.days - 1))::double precision * '1 day'::interval)) AT TIME ZONE 'Asia/Tokyo'::text) AS from_at,
+            now() AS to_at
+           FROM ( VALUES ('week'::text,7), ('four_weeks'::text,28)) p(period, days)
+        )
+ SELECT period,
+    days,
+    ( SELECT count(*) AS count
+           FROM public.users u
+          WHERE ((u.last_seen_at >= b.from_at) AND (u.last_seen_at < b.to_at))) AS active_users,
+    ( SELECT count(DISTINCT a.user_id) AS count
+           FROM (public.achievements a
+             JOIN public.users u ON ((u.id = a.user_id)))
+          WHERE ((a.achieved_at >= b.from_at) AND (a.achieved_at < b.to_at) AND (u.last_seen_at >= b.from_at) AND (u.last_seen_at < b.to_at))) AS achievers,
+    ( SELECT count(*) AS count
+           FROM public.achievements a
+          WHERE ((a.achieved_at >= b.from_at) AND (a.achieved_at < b.to_at))) AS achievements,
+    ( SELECT count(*) AS count
+           FROM public.options o
+          WHERE ((o.suggestion_id IS NOT NULL) AND (o.created_at >= b.from_at) AND (o.created_at < b.to_at))) AS suggestion_adds,
+    ( SELECT percentile_cont((0.5)::double precision) WITHIN GROUP (ORDER BY (((EXTRACT(epoch FROM (f.first_at - o.created_at)) / (86400)::numeric))::double precision)) AS percentile_cont
+           FROM (public.options o
+             JOIN ( SELECT a.option_id,
+                    min(a.achieved_at) AS first_at
+                   FROM public.achievements a
+                  GROUP BY a.option_id) f ON ((f.option_id = o.id)))
+          WHERE ((f.first_at >= b.from_at) AND (f.first_at < b.to_at))) AS first_achievement_days_median,
+    ( SELECT count(*) AS count
+           FROM public.events e
+          WHERE (((e.type)::text = 'client_error'::text) AND (e.received_at >= b.from_at) AND (e.received_at < b.to_at))) AS client_errors
+   FROM bounds b;
+
+
+--
+-- Name: usage_retention; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.usage_retention AS
+ WITH bounds AS (
+         SELECT ((date_trunc('day'::text, (now() AT TIME ZONE 'Asia/Tokyo'::text)) - ((27)::double precision * '1 day'::interval)) AT TIME ZONE 'Asia/Tokyo'::text) AS cohort_from,
+            ((date_trunc('day'::text, (now() AT TIME ZONE 'Asia/Tokyo'::text)) - ((20)::double precision * '1 day'::interval)) AT TIME ZONE 'Asia/Tokyo'::text) AS after_from
+        )
+ SELECT count(*) AS cohort,
+    count(*) FILTER (WHERE (u.last_seen_at >= b.after_from)) AS retained
+   FROM (public.users u
+     CROSS JOIN bounds b)
+  WHERE ((u.created_at >= b.cohort_from) AND (u.created_at < b.after_from));
+
+
+--
+-- Name: usage_stale_pending; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.usage_stale_pending AS
+ SELECT percentile_cont((0.5)::double precision) WITHIN GROUP (ORDER BY ((stale)::double precision)) AS median
+   FROM ( SELECT u.id,
+            count(o.id) FILTER (WHERE ((o.status = 'pending'::text) AND (o.created_at <= (now() - ((90)::double precision * '24:00:00'::interval))))) AS stale
+           FROM (public.users u
+             LEFT JOIN public.options o ON ((o.user_id = u.id)))
+          WHERE ((u.last_seen_at >= ((date_trunc('day'::text, (now() AT TIME ZONE 'Asia/Tokyo'::text)) - ((27)::double precision * '1 day'::interval)) AT TIME ZONE 'Asia/Tokyo'::text)) AND (u.last_seen_at < now()))
+          GROUP BY u.id) s;
 
 
 --
@@ -757,4 +841,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261108000000'),
     ('20261108120000'),
     ('20261108130000'),
-    ('20261109030405');
+    ('20261109030405'),
+    ('20261111040212');

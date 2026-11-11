@@ -1,9 +1,20 @@
 import type { Pool } from "pg";
-import type { ErrorCount, UsageSource } from "./usage-report.ts";
+import type { ErrorCount, PeriodCounts, Retention, UsageSource } from "./usage-report.ts";
 
-type CountRow = { n: string };
+// UsageSource の本物。ol_metrics で集計のビュー（usage_*。backend/db/migrations の usage_views）だけを読む
+// ol_metrics は表を読めないので、ここに表の名前を書いても権限のエラーになる（docs/decisions/0043）
+// count(*) は bigint なので文字列で返る。数に直す
 
-// UsageSource の本物。日時は timestamptz なので、Date をそのまま渡して比べられる
+type PeriodRow = {
+  period: string;
+  active_users: string;
+  achievers: string;
+  achievements: string;
+  suggestion_adds: string;
+  first_achievement_days_median: number | null;
+  client_errors: string;
+};
+
 export class PgUsageSource implements UsageSource {
   readonly #pool: Pool;
 
@@ -11,44 +22,41 @@ export class PgUsageSource implements UsageSource {
     this.#pool = pool;
   }
 
-  achievements(from: Date, to: Date): Promise<number> {
-    return this.#count("SELECT COUNT(*) AS n FROM achievements WHERE achieved_at >= $1 AND achieved_at < $2", [from, to]);
-  }
-
-  suggestionAdds(from: Date, to: Date): Promise<number> {
-    return this.#count("SELECT COUNT(*) AS n FROM options WHERE suggestion_id IS NOT NULL AND created_at >= $1 AND created_at < $2", [from, to]);
-  }
-
-  // 秒の端数は切り捨てる
-  async firstAchievementSeconds(from: Date, to: Date): Promise<number[]> {
-    const { rows } = await this.#pool.query<{ seconds: string }>(
-      `SELECT floor(EXTRACT(EPOCH FROM f.first_at - o.created_at))::bigint AS seconds
-         FROM options o
-         JOIN (SELECT option_id, MIN(achieved_at) AS first_at FROM achievements GROUP BY option_id) f ON f.option_id = o.id
-        WHERE f.first_at >= $1 AND f.first_at < $2`,
-      [from, to],
+  async periods(): Promise<{ week: PeriodCounts; fourWeeks: PeriodCounts }> {
+    const { rows } = await this.#pool.query<PeriodRow>(
+      `SELECT period, active_users, achievers, achievements, suggestion_adds, first_achievement_days_median, client_errors
+         FROM usage_periods`,
     );
-    return rows.map((row) => Number(row.seconds));
+    const pick = (period: string): PeriodCounts => {
+      const row = rows.find((r) => r.period === period);
+      if (row === undefined) throw new Error(`usage_periods に ${period} の行がない`);
+      return {
+        activeUsers: Number(row.active_users),
+        achievers: Number(row.achievers),
+        achievements: Number(row.achievements),
+        suggestionAdds: Number(row.suggestion_adds),
+        firstAchievementDaysMedian: row.first_achievement_days_median,
+        clientErrors: Number(row.client_errors),
+      };
+    };
+    return { week: pick("week"), fourWeeks: pick("four_weeks") };
   }
 
-  stalePending(before: Date): Promise<number> {
-    return this.#count("SELECT COUNT(*) AS n FROM options WHERE status = 'pending' AND created_at < $1", [before]);
+  async retention(): Promise<Retention> {
+    const { rows } = await this.#pool.query<{ cohort: string; retained: string }>("SELECT cohort, retained FROM usage_retention");
+    return { cohort: Number(rows[0]?.cohort ?? 0), retained: Number(rows[0]?.retained ?? 0) };
   }
 
-  async clientErrors(from: Date, to: Date): Promise<ErrorCount[]> {
-    const { rows } = await this.#pool.query<{ message: string | null; n: string }>(
-      `SELECT payload->>'message' AS message, COUNT(*) AS n
-         FROM events
-        WHERE type = 'client_error' AND occurred_at >= $1 AND occurred_at < $2
-        GROUP BY message
-        ORDER BY n DESC, message`,
-      [from, to],
+  async stalePendingMedian(): Promise<number | null> {
+    const { rows } = await this.#pool.query<{ median: number | null }>("SELECT median FROM usage_stale_pending");
+    return rows[0]?.median ?? null;
+  }
+
+  async topClientErrors(): Promise<ErrorCount[]> {
+    const { rows } = await this.#pool.query<{ message: string | null; errors: string }>(
+      "SELECT message, errors FROM usage_client_error_messages ORDER BY errors DESC, message",
     );
-    return rows.map((row) => ({ message: String(row.message), count: Number(row.n) }));
-  }
-
-  async #count(sql: string, params: unknown[]): Promise<number> {
-    const { rows } = await this.#pool.query<CountRow>(sql, params);
-    return Number(rows[0]?.n ?? 0);
+    // payload に message がない行は 1 つにまとまって NULL で返る
+    return rows.map((row) => ({ message: row.message ?? "（メッセージなし）", count: Number(row.errors) }));
   }
 }
