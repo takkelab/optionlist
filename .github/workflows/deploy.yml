@@ -98,6 +98,7 @@ jobs:
       SERVICE: optionlist-production
       MIGRATE_JOB: optionlist-production-migrate
       CLEANUP_JOB: optionlist-production-cleanup
+      BACKUP_JOB: optionlist-production-backup
       ORIGIN: https://optionlist-production-55327626788.asia-northeast1.run.app
     steps:
       - uses: google-github-actions/auth@v2
@@ -123,6 +124,10 @@ jobs:
       - name: Update the cleanup job image
         run: |
           gcloud run jobs update "$CLEANUP_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
+      # 週 1 の書き出しの Job（本番だけ。data.md §6）も、出すものと同じイメージ（pg_dump 入り）にする
+      - name: Update the backup job image
+        run: |
+          gcloud run jobs update "$BACKUP_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
       - name: Deploy to production
         run: |
           gcloud run deploy "$SERVICE" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet

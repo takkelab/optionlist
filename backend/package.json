@@ -7,6 +7,7 @@
     "dev": "tsx watch --env-file=.env --max-semi-space-size=4 src/server.ts",
     "start": "tsx --env-file=.env --max-semi-space-size=4 src/server.ts",
     "cleanup": "tsx --env-file=.env --max-semi-space-size=4 src/jobs/cleanup.ts",
+    "backup": "tsx --env-file=.env --max-semi-space-size=4 src/jobs/backup.ts",
     "db:roles": "tsx --env-file=.env db/roles/setup-roles.ts",
     "db:roles:test": "tsx --env-file=.env.test db/roles/setup-roles.ts --test --recreate",
     "db:roles:cloud": "tsx db/roles/setup-roles.ts --cloud",

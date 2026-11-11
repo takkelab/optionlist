@@ -17,6 +17,8 @@ export const INSTANCE = {
   tier: "db-f1-micro",
   storageGb: 10,
   backupStartTime: "18:00", // UTC。日本時間の 3 時
+  // 自動バックアップ・その場で取ったバックアップの置き場所。書かないとマルチリージョン（asia）になり、国外に置かれうる（docs/decisions/0061）
+  backupLocation: "asia-northeast1",
   retainedBackups: 7,
   transactionLogDays: 7,
   // 管理用のユーザー（cloudsqlsuperuser。superuser ではない）のパスワード。db:roles:cloud だけが使う
@@ -114,6 +116,32 @@ export const CLEANUP_SCHEDULE = { cron: "0 4 * * *", timeZone: "Asia/Tokyo" } as
 export const cleanupRunUri = (c: EnvConfig): string =>
   `https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${c.cleanupJob}:run`;
 
+// 写真の入れ物で、消したものを戻せる日数（soft delete。data.md §6）
+export const PHOTO_SOFT_DELETE_SECONDS = 7 * 24 * 60 * 60;
+
+// 週 1 の書き出し（data.md §6。本番だけ）。ol_migrator_production で pg_dump し、別の入れ物に 35 日置く
+// サービスアカウントは書き込み（objectCreator）だけ。Scheduler は削除のジョブと同じ optionlist-production-sched が名乗る
+const backupEnv = envConfig("production");
+export const BACKUP = {
+  bucket: "optionlist-backups",
+  retentionDays: 35,
+  job: "optionlist-production-backup",
+  scheduler: "optionlist-production-backup-weekly",
+  serviceAccount: sa("optionlist-production-backup"),
+  // 書き出す DB の接続先（マイグレーションの Job と同じ ol_migrator_production）
+  databaseUrlSecret: backupEnv.secrets.databaseUrl,
+  args: ["--import", "tsx", "--max-semi-space-size=4", "src/jobs/backup.ts"],
+  timeoutSeconds: 3600,
+  schedule: { cron: "0 5 * * 0", timeZone: "Asia/Tokyo" },
+} as const;
+// 書き出しの入れ物のライフサイクル（35 日で消す）。setup が書き、infra:check が同じものかを確かめる
+export const backupLifecycle = () => ({ rule: [{ action: { type: "Delete" }, condition: { age: BACKUP.retentionDays } }] });
+export const backupRunUri =(): string => `https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${BACKUP.job}:run`;
+
+// 復旧の訓練（npm run ops:restore-drill。data.md §6）の一時的なインスタンス。共用のインスタンスと同じ版・エディション・マシン。
+// 自動バックアップ・削除保護は付けない（数時間で消す）。名前は restore-drill-<YYYYMMDDHHmm>
+export const DRILL_PROXY_PORT = 5434;
+
 // Cloud Run から Cloud SQL へは Unix ソケットでつなぐ（--add-cloudsql-instances）。pg（host）と dbmate（host を socket と同じに読む）の両方が読める形
 // ホストが空の URL は WHATWG の URL では読めないので、文字列で組み立てる
 export const socketDatabaseUrl = (user: string, password: string, database: string): string =>
@@ -127,8 +155,8 @@ export const passwordOf = (socketUrl: string): string => {
 
 // 手元から Cloud SQL Auth Proxy 越しにつなぐときの URL（db:roles:cloud・infra:check）。Proxy が TLS で包むので sslmode=disable
 export const PROXY_PORT = 5433;
-export const proxyDatabaseUrl = (user: string, password: string, database: string): string =>
-  `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@127.0.0.1:${PROXY_PORT}/${database}?sslmode=disable`;
+export const proxyDatabaseUrl = (user: string, password: string, database: string, port: number = PROXY_PORT): string =>
+  `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@127.0.0.1:${port}/${database}?sslmode=disable`;
 
 // 有効にする API
 export const SERVICES = [

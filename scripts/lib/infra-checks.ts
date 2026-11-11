@@ -1,7 +1,7 @@
 // infra:check の判定（architecture.md §4.1、process.md §5 の R8。docs/decisions/0055・0056・0057）
 // 読むのは scripts/infra-check.ts（gcloud・gh・Cloud SQL Auth Proxy）。ここは読んだものを受け取って、違っているところを 1 行ずつ返す（空なら合格）
 import {
-  CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID, PROJECT_NUMBER, PROVIDER_CONDITION,
+  BACKUP, PHOTO_SOFT_DELETE_SECONDS, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID, PROJECT_NUMBER, PROVIDER_CONDITION,
   PROVIDER_MAPPING, REGION, cleanupRunUri, deployPrincipal, envConfig,
 } from "../../infra/config.ts";
 import type { EnvName } from "../../infra/config.ts";
@@ -28,14 +28,16 @@ export const policyProblems = (label: string, policy: Policy, expected: Grant[],
 // プロジェクトの単位のポリシーは、この環境のサービスアカウントの分だけを見る（ほかのアプリや自分のアカウントの分は見ない）
 export const projectPolicyProblems = (env: EnvName, policy: Policy): string[] => {
   const { run, migrate, cleanup, scheduler, deploy } = envConfig(env).serviceAccounts;
-  const mine = new Set([run, migrate, cleanup, scheduler, deploy].map((e) => `serviceAccount:${e}`));
+  // 書き出しの Job（本番だけ。data.md §6）も Cloud SQL につなぐ
+  const backup = env === "production" ? [BACKUP.serviceAccount] : [];
+  const mine = new Set([run, migrate, cleanup, scheduler, deploy, ...backup].map((e) => `serviceAccount:${e}`));
   // GitHub からの principal・principalSet にプロジェクトの単位で権限を付けると、サービスアカウントごとの条件を素通りする（docs/decisions/0055）
   const pool = `//iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${GITHUB.pool}`;
   const federated = (member: string) => member.startsWith(`principal:${pool}`) || member.startsWith(`principalSet:${pool}`);
   return policyProblems(
     `プロジェクト（${env} のサービスアカウントと GitHub からの principal）`,
     policy,
-    [["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`], ["roles/cloudsql.client", `serviceAccount:${cleanup}`]],
+    [run, migrate, cleanup, ...backup].map((e): Grant => ["roles/cloudsql.client", `serviceAccount:${e}`]),
     (member) => !mine.has(member) && !federated(member),
   );
 };
@@ -67,6 +69,7 @@ export type SqlInstance = {
     backupConfiguration?: {
       enabled?: boolean;
       pointInTimeRecoveryEnabled?: boolean;
+      location?: string;
       transactionLogRetentionDays?: number;
       backupRetentionSettings?: { retainedBackups?: number };
     };
@@ -92,6 +95,8 @@ export const instanceProblems = (instance: SqlInstance | null): string[] => {
   expect(backup.pointInTimeRecoveryEnabled === true, "時点復旧がない");
   expect((backup.backupRetentionSettings?.retainedBackups ?? 0) >= INSTANCE.retainedBackups, `バックアップが ${INSTANCE.retainedBackups} 回分より少ない`);
   expect((backup.transactionLogRetentionDays ?? 0) >= INSTANCE.transactionLogDays, `時点復旧のログが ${INSTANCE.transactionLogDays} 日より短い`);
+  // 書かないとマルチリージョン（asia）に置かれる。プライバシーポリシーの「東京リージョンに保存」と合わせる（docs/decisions/0061）
+  expect(backup.location === INSTANCE.backupLocation, `バックアップの置き場所が ${INSTANCE.backupLocation} でない（${backup.location ?? "マルチリージョン"}）`);
   expect((s.ipConfiguration?.authorizedNetworks ?? []).length === 0, "承認済みのネットワークがある（Proxy とコネクタからだけつなぐ）");
   expect(s.ipConfiguration?.sslMode === "ENCRYPTED_ONLY", `暗号化していない接続を受け付ける（sslMode: ${s.ipConfiguration?.sslMode}）`);
   return problems;
@@ -159,7 +164,7 @@ export type SchedulerJob = {
   httpTarget?: { uri?: string; httpMethod?: string; oauthToken?: { serviceAccountEmail?: string } };
 };
 
-const envMap = (container: Container | undefined): Map<string, string> =>
+export const envMap = (container: Container | undefined): Map<string, string> =>
   new Map((container?.env ?? []).map((e) => [e.name, e.value ?? `secret:${e.valueFrom?.secretKeyRef?.name ?? ""}`]));
 
 export const serviceProblems = (env: EnvName, service: RunService | null): string[] => {
@@ -215,7 +220,13 @@ export const jobProblems = (env: EnvName, job: RunJob | null): string[] => {
   return problems;
 };
 
-export type Bucket = { location?: string; public_access_prevention?: string; uniform_bucket_level_access?: boolean };
+export type Bucket = {
+  location?: string;
+  public_access_prevention?: string;
+  uniform_bucket_level_access?: boolean;
+  soft_delete_policy?: { retentionDurationSeconds?: string | number };
+  lifecycle_config?: { rule?: unknown[] };
+};
 
 export const bucketProblems = (env: EnvName, bucket: Bucket | null): string[] => {
   const c = envConfig(env);
@@ -224,6 +235,9 @@ export const bucketProblems = (env: EnvName, bucket: Bucket | null): string[] =>
   if (bucket.location?.toLowerCase() !== REGION) problems.push(`${c.bucket}: 地域が ${REGION} でない（${bucket.location}）`);
   if (bucket.public_access_prevention !== "enforced") problems.push(`${c.bucket}: 公開アクセスの防止が enforced でない`);
   if (bucket.uniform_bucket_level_access !== true) problems.push(`${c.bucket}: 均一なバケットレベルのアクセスでない（オブジェクトごとに公開できる）`);
+  // 消した写真を 7 日間戻せる（data.md §6）
+  const softDelete = Number(bucket.soft_delete_policy?.retentionDurationSeconds ?? 0);
+  if (softDelete !== PHOTO_SOFT_DELETE_SECONDS) problems.push(`${c.bucket}: 消した写真を戻せる期間（soft delete）が 7 日でない（${softDelete} 秒）`);
   return problems;
 };
 
@@ -269,6 +283,7 @@ export const expectedGrants = (env: EnvName) => {
   const sa = (email: string) => `serviceAccount:${email}`;
   const { run, migrate, cleanup, scheduler, deploy } = c.serviceAccounts;
   const productionDeploy = sa(envConfig("production").serviceAccounts.deploy);
+  const backupAccess: Grant[] = env === "production" ? [["roles/secretmanager.secretAccessor", sa(BACKUP.serviceAccount)]] : [];
   return {
     service: [
       ["roles/run.invoker", "allUsers"],
@@ -282,7 +297,8 @@ export const expectedGrants = (env: EnvName) => {
       [c.secrets.appDatabaseUrl, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.metricsToken, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.ipHashSecret, [["roles/secretmanager.secretAccessor", sa(run)]]],
-      [c.secrets.databaseUrl, [["roles/secretmanager.secretAccessor", sa(migrate)]]],
+      // 本番は書き出しの Job も ol_migrator でつなぐ（data.md §6）
+      [c.secrets.databaseUrl, [["roles/secretmanager.secretAccessor", sa(migrate)], ...backupAccess]],
       [c.secrets.cleanupDatabaseUrl, [["roles/secretmanager.secretAccessor", sa(cleanup)]]],
       // metrics:usage -- --env が手元で読むだけ（プロジェクトの持ち主の自分）。誰にも付けない（metrics.md §6）
       [c.secrets.metricsDatabaseUrl, []],
@@ -294,6 +310,7 @@ export const expectedGrants = (env: EnvName) => {
       // Cloud Scheduler が名乗る。デプロイ用にも名乗らせない（Job の run.invoker だけを持つ。data.md §5）
       [scheduler, []],
       [deploy, [["roles/iam.workloadIdentityUser", deployPrincipal(env)]]],
+      ...(env === "production" ? [[BACKUP.serviceAccount, [["roles/iam.serviceAccountUser", sa(deploy)]]]] : []),
     ] as [string, Grant[]][],
     // Artifact Registry は環境で共用。確認用が書き、本番は読むだけ
     repository: [

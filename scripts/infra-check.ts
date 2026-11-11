@@ -2,8 +2,9 @@
 // 違っているところを 1 行ずつ出し、1 つでもあれば終了コード 1。変えるのは infra/setup.ts（ここは読むだけ）
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { backupBucketProblems, backupGrants, backupJobProblems, backupSchedulerProblems } from "./lib/backup-checks.ts";
 import {
-  ARTIFACT_REPOSITORY, ENV_NAMES, GITHUB, INSTANCE, PROJECT_ID, REGION, envConfig, passwordOf,
+  ARTIFACT_REPOSITORY, BACKUP, ENV_NAMES, GITHUB, INSTANCE, PROJECT_ID, REGION, envConfig, passwordOf,
 } from "../infra/config.ts";
 import type { EnvName } from "../infra/config.ts";
 import { CloudSqlProxy, readSecret } from "../infra/lib/cloud-sql.ts";
@@ -82,6 +83,18 @@ const readGithub = (): { permissions: string | null; workflows: { path: string; 
   return { permissions, workflows };
 };
 
+// 週 1 の書き出し（本番だけ。data.md §6）: Job・Scheduler・入れ物と、その IAM
+const checkBackup = (policy: (args: string[], flags: Record<string, string>) => Policy): string[] => {
+  const grants = backupGrants();
+  return [
+    ...backupJobProblems(readJson<RunJob>(gcloud, ["run", "jobs", "describe", BACKUP.job], R)),
+    ...policyProblems(`${BACKUP.job} の IAM`, policy(["run", "jobs", "get-iam-policy", BACKUP.job], R), grants.job),
+    ...backupSchedulerProblems(readJson<SchedulerJob>(gcloud, ["scheduler", "jobs", "describe", BACKUP.scheduler], { ...P, location: REGION })),
+    ...backupBucketProblems(readJson<Bucket>(gcloud, ["storage", "buckets", "describe", `gs://${BACKUP.bucket}`], P)),
+    ...policyProblems(`${BACKUP.bucket} の IAM`, policy(["storage", "buckets", "get-iam-policy", `gs://${BACKUP.bucket}`], P), grants.bucket, isProjectConvenience),
+  ];
+};
+
 const checkEnv = async (env: EnvName): Promise<string[]> => {
   const c = envConfig(env);
   const grants = expectedGrants(env);
@@ -106,6 +119,7 @@ const checkEnv = async (env: EnvName): Promise<string[]> => {
     ...projectPolicyProblems(env, policy(["projects", "get-iam-policy", PROJECT_ID], {})),
     ...providerProblems(readJson<Provider>(gcloud, ["iam", "workload-identity-pools", "providers", "describe", GITHUB.provider], { ...P, location: "global", "workload-identity-pool": GITHUB.pool })),
   ];
+  if (env === "production") problems.push(...checkBackup(policy));
   const github = readGithub();
   problems.push(...githubProblems(github.permissions, github.workflows));
   problems.push(...(await readDatabase(env).then((facts) => databaseProblems(env, facts), (error: unknown) => [`${c.database}: 読めなかった（${error instanceof Error ? error.message : String(error)}）`])));
