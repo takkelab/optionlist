@@ -24,21 +24,24 @@ const portOpen = (port: number): Promise<boolean> =>
 
 export class CloudSqlProxy {
   readonly #child: ChildProcess;
+  readonly #port: number;
 
-  private constructor(child: ChildProcess) {
+  private constructor(child: ChildProcess, port: number) {
     this.#child = child;
+    this.#port = port;
   }
 
-  static async start(): Promise<CloudSqlProxy> {
-    if (await portOpen(PROXY_PORT)) throw new Error(`ポート ${PROXY_PORT} がもう使われている（前の Proxy が残っていないか確かめる）`);
-    const child = spawn(`cloud-sql-proxy --gcloud-auth --port ${PROXY_PORT} ${INSTANCE_CONNECTION}`, { shell: true, stdio: ["ignore", "ignore", "pipe"] });
+  // connection・port は、復旧の訓練が一時的なインスタンスにつなぐときだけ変える（共用のインスタンスの Proxy と同時に動かす）
+  static async start(connection: string = INSTANCE_CONNECTION, port: number = PROXY_PORT): Promise<CloudSqlProxy> {
+    if (await portOpen(port)) throw new Error(`ポート ${port} がもう使われている（前の Proxy が残っていないか確かめる）`);
+    const child = spawn(`cloud-sql-proxy --gcloud-auth --port ${port} ${connection}`, { shell: true, stdio: ["ignore", "ignore", "pipe"] });
     let log = "";
     child.stderr?.on("data", (chunk: Buffer) => {
       log += chunk.toString();
     });
     for (let i = 0; i < 30; i++) {
       if (child.exitCode !== null) break;
-      if (await portOpen(PROXY_PORT)) return new CloudSqlProxy(child);
+      if (await portOpen(port)) return new CloudSqlProxy(child, port);
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     child.kill();
@@ -46,7 +49,7 @@ export class CloudSqlProxy {
   }
 
   url(user: string, password: string, database: string): string {
-    return proxyDatabaseUrl(user, password, database);
+    return proxyDatabaseUrl(user, password, database, this.#port);
   }
 
   stop(): void {

@@ -210,16 +210,17 @@ RLS の中では「鍵から人を探す」ことができない（まだ誰か�
 ## 6. バックアップ（docs/decisions/0041）
 Cloud SQL の自動バックアップと時点復旧は、**インスタンス全体**が単位になる。インスタンスは確認用・今後のアプリと共用している（docs/decisions/0035）ので、戻すときに共用のインスタンスをその場で巻き戻さない。
 
-- 共用のインスタンスで、自動バックアップを毎日・7 日分残し、時点復旧を有効にする。インスタンスを消してもバックアップを残す設定と、削除保護を付ける（`npm run infra:check -- instance` で確かめる）
-- 週 1 回（日曜 5 時〈日本時間〉）、Cloud Run Job が `ol_migrator` で `pg_dump --enable-row-security` を流し、`optionlist_production` の DB だけを別の入れ物（`optionlist-backups`、35 日で消える）に書き出す（`--enable-row-security` を付けないと、RLS のある表で止まる。`ol_migrator` は `USING (true)` なので全員の行が出る）
-- 写真の入れ物は、消したものを 7 日間戻せる設定（soft delete）にする
+- 共用のインスタンスで、自動バックアップを毎日・7 日分残し、時点復旧を有効にする。インスタンスを消してもバックアップを残す設定と、削除保護を付ける。バックアップの置き場所は東京（`asia-northeast1`）にする（書かないとマルチリージョンの `asia` になり、国外に置かれうる。docs/decisions/0061）。どれも `npm run infra:check -- instance` で確かめる
+- 週 1 回（日曜 5 時〈日本時間〉）、Cloud Run Job `optionlist-production-backup`（Cloud Scheduler `optionlist-production-backup-weekly`）が `ol_migrator`（`ol_migrator_production`。マイグレーションの Job と同じ秘密の値）で `pg_dump --format=custom --enable-row-security` を流し、`optionlist_production` の DB だけを別の入れ物（`optionlist-backups`、35 日で消える。soft delete は付けない〈付けると消えたあとも残り、ポリシーの「最長 5 週間」を超える〉）の `optionlist_production/<UTC の日時>.dump` に書き出す（`--enable-row-security` を付けないと、RLS のある表で止まる。`ol_migrator` は `USING (true)` なので全員の行が出る）。コードは `backend/src/jobs/backup.ts`（手元から流すときは `npm --prefix backend run backup`。PATH の pg_dump〈17〉と、書き込める `BACKUP_BUCKET` の入れ物が要る。手元のファイルには書かない）。pg_dump の出力は、終了コード 0 で終わったと分かってから書き込みを閉じる（失敗したら途中までのファイルを残さない）。成功は `kind: backup_result`（大きさ）、失敗は `kind: backup_failed` で終了コード 1。サービスアカウント `optionlist-production-backup` は、入れ物には作るだけ（`roles/storage.objectCreator`。読めない・消せない・上書きできない）
+- 写真の入れ物は、消したものを 7 日間戻せる設定（soft delete）にする（確認用・本番。`infra:check` で確かめる）
 - 戻すとき: 自動バックアップか時点復旧で**新しい一時的なインスタンス**を作り、そこから `optionlist_production` の DB だけを書き出して、本番の DB に入れ直す（ほかの DB は戻さない）。週 1 の書き出しから戻すときも、入れ直すのは `optionlist_production` だけ。戻したときに行と写真の食い違いがあれば、行のない写真は消し、写真のない行は `photo_filename` を NULL にする
 - 四半期に 1 回、`npm run ops:restore-drill -- <staging|production>` で復旧の訓練をする。利用者が書き続けていても判定できるよう、件数ではなく ID の集合で比べる（metrics.md §8）
   1. `ol_migrator` で、今の `optionlist_<env>` の利用者の表（users・options・achievements）ごとに、最大の ID M を記録する（マスターデータは数えない）
   2. その場でバックアップを取る（`gcloud sql backups create`）。最新の自動バックアップは 1 日 1 回なので、それを戻すと、その後に書かれた行がないのは当たり前になってしまう
-  3. バックアップが終わった直後に、今の `optionlist_<env>` の表ごとに、M 以下の ID の集合 S′ を読む。S′ にある行は、1 の前からあって 3 のあとにも残っている（ID は増える一方で使い直さない）ので、バックアップの間も消えておらず、必ずバックアップに入っている。**S′ が空なら失敗にする**（数え方の誤りで、空どうしが一致して成功に見えるのを防ぐ）
+  3. バックアップが終わった直後に、今の `optionlist_<env>` の表ごとに、M 以下の ID の集合 S′ を読む。S′ にある行は、1 の前からあって 3 のあとにも残っている（ID は増える一方で使い直さない）ので、バックアップの間も消えておらず、必ずバックアップに入っている。**どれかの表の S′ が空なら失敗にする**（数え方の誤りで、空どうしが一致して成功に見えるのを防ぐ）
   4. そのバックアップを一時的なインスタンス（名前は `restore-drill-<YYYYMMDDHHmm>`。Cloud SQL は消したインスタンスの名前をしばらく使い直せないので、毎回変える）に戻し、`optionlist_<env>` の ID の集合 R を読む
   5. 成功の条件: S′ のすべてが R にあること（R にしかない ID は、M より大きい新しい行か、バックアップのあとで消えた行なので、失敗にしない。利用者が途中で項目を消しても崩れない）。あわせて、「行があるのに写真がない」が 0 件であること。数えるのは、S′ に入っている achievements のうち、戻した DB と 3 で読んだ今の DB で `photo_filename` が同じもの（バックアップの前後で写真が変わっていないもの）だけで、そのファイルが今の入れ物にあるかを確かめる。「写真があるのに行がない」は訓練では数えない（バックアップのあとに付けた写真や、削除のジョブが 1 日たってから消す行のない写真〈§5〉が、ふだんから入れ物にあるため。行のない写真は削除のジョブが片付ける）
-  6. 一時的なインスタンスとその場で取ったバックアップを消し、`docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの ID の数 | 行があるのに写真がない | 結果 |`）に 1 行足す。結果の列は `成功` か `失敗` のどちらかで、`ops:restore-drill` がこの文字で書く
+  - 1〜3 と 4 は、どちらも `ol_migrator_<env>` で Cloud SQL Auth Proxy 越しに読む（戻したインスタンスにはロールとパスワードもそのまま戻る）。一時的なインスタンスは共用のインスタンスと同じ版・エディション・マシンで、容量は共用のインスタンスの今の容量（戻す先は元以上の容量が要る）にし、自動バックアップ・削除保護を付けず、暗号化した接続だけを受け付ける（承認済みのネットワークなし）。インスタンスの作成・戻す・消す・バックアップは `--async` で始めて `gcloud sql operations wait` で終わるまで待つ（docs/decisions/0061）
+  6. 一時的なインスタンスとその場で取ったバックアップを消し（成功しても失敗しても消す。その場のバックアップは説明〈`restore-drill-<日時>`〉で探し直して消す。消せなかった・あるか読めなかったときは、判定が通っていても結果を `失敗` にして終了コード 1 で知らせる）、`docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの ID の数 | 行があるのに写真がない | 結果 |`）に 1 行足す。結果の列は `成功` か `失敗` のどちらかで、`ops:restore-drill` がこの文字で書く
 - 訓練を確認用（`staging`）でもできるのは、仕組みを本番の前に確かめるため（R10b）。本番の訓練は、本番に利用者の行が入ってから（公開の 1 段目。docs/decisions/0045）行い、その後は四半期ごとに本番で行う
 - 一時的なインスタンスは、運営者だけが触る（確認用の環境ではない）。確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）

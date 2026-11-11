@@ -16,6 +16,8 @@
 - 性能用データ: `npm --prefix backend run db:perf-data`（`.env.test` の DB に入れる。名前が `_test` で終わる DB 以外では止まる）
 - Backend 起動: `npm --prefix backend run dev`（http://localhost:8000）
 - 削除のジョブ（data.md §5）を手元で流す: `npm --prefix backend run cleanup`（`backend/.env` の `CLEANUP_DATABASE_URL`〈ol_cleanup〉でつなぐ）。確認用で流すのは `gcloud run jobs execute optionlist-staging-cleanup --region asia-northeast1 --wait`
+- 週 1 の書き出し（data.md §6。本番だけ）: 本番で流すのは `gcloud run jobs execute optionlist-production-backup --region asia-northeast1 --wait`（イメージは本番のデプロイで差し替わる）。手元の `npm --prefix backend run backup` は PATH の pg_dump（17）と `BACKUP_BUCKET` の入れ物が要る
+- 復旧の訓練: `npm run ops:restore-drill -- <staging|production>`（その場でバックアップを取り、一時的なインスタンス `restore-drill-<日時>` に戻して数え、`docs/ops/restore-drills.md` に 1 行足す。数十分・数十円かかるので、流す前に確かめる。訓練の前に、その環境に項目・達成・写真があること。終わったら `gcloud sql instances list --filter="name:restore-drill-*"` が空か確かめる）
 - Frontend 起動: `npm --prefix frontend run dev`（http://localhost:5173、/api は backend にプロキシ）
 - スマホから触る: `npm --prefix frontend run dev:lan` で起動し、同じ Wi-Fi のスマホで表示された Network の URL（http://<PC の IP>:5173）を開く。初回は Windows のファイアウォールの許可が要る
 - 型チェック（backend・frontend・scripts・tools・e2e）: `npm run typecheck`

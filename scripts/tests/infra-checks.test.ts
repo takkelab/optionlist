@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { INSTANCE_CONNECTION, PROVIDER_CONDITION, PROVIDER_MAPPING, envConfig } from "../../infra/config.ts";
+import { BACKUP, INSTANCE_CONNECTION, PROVIDER_CONDITION, PROVIDER_MAPPING, envConfig } from "../../infra/config.ts";
 import {
   bucketProblems, databaseProblems, expectedGrants, githubProblems, instanceProblems, isProjectConvenience, jobProblems, logSinkProblems, policyProblems,
   projectPolicyProblems, providerProblems, secretLocationProblems, serviceProblems,
@@ -64,6 +64,14 @@ describe("policyProblems", () => {
     assert.equal(projectPolicyProblems("staging", toPolicy([...ok, ["roles/run.admin", `serviceAccount:${deploy}`]])).length, 1);
   });
 
+  // 本番は書き出しの Job のサービスアカウントも Cloud SQL につなぐ（data.md §6）
+  it("本番は書き出しのサービスアカウントの cloudsql.client も要る", () => {
+    const { run, migrate, cleanup } = envConfig("production").serviceAccounts;
+    const base: Grant[] = [run, migrate, cleanup].map((e): Grant => ["roles/cloudsql.client", `serviceAccount:${e}`]);
+    assert.equal(projectPolicyProblems("production", toPolicy(base)).length, 1);
+    assert.deepEqual(projectPolicyProblems("production", toPolicy([...base, ["roles/cloudsql.client", `serviceAccount:${BACKUP.serviceAccount}`]])), []);
+  });
+
   // サービスアカウントを通さずに、GitHub からの principalSet にプロジェクトの単位で権限を付けると、deploy_target の条件を素通りする
   it("GitHub からの principalSet にプロジェクトの単位で権限があれば違反", () => {
     const { run, migrate, cleanup } = envConfig("staging").serviceAccounts;
@@ -84,7 +92,7 @@ describe("instanceProblems", () => {
       tier: "db-f1-micro",
       deletionProtectionEnabled: true,
       retainBackupsOnDelete: true,
-      backupConfiguration: { enabled: true, pointInTimeRecoveryEnabled: true, transactionLogRetentionDays: 7, backupRetentionSettings: { retainedBackups: 7 } },
+      backupConfiguration: { enabled: true, pointInTimeRecoveryEnabled: true, location: "asia-northeast1", transactionLogRetentionDays: 7, backupRetentionSettings: { retainedBackups: 7 } },
       ipConfiguration: { authorizedNetworks: [], sslMode: "ENCRYPTED_ONLY" },
     },
   };
@@ -99,6 +107,12 @@ describe("instanceProblems", () => {
       settings: { ...good.settings, deletionProtectionEnabled: false, backupConfiguration: { ...good.settings?.backupConfiguration, pointInTimeRecoveryEnabled: false }, ipConfiguration: { authorizedNetworks: [{}], sslMode: "ENCRYPTED_ONLY" } },
     };
     assert.equal(instanceProblems(bad).length, 3);
+  });
+
+  // 置き場所を書かないと asia（マルチリージョン）になる（docs/decisions/0061）
+  it("バックアップの置き場所が東京でなければ違反", () => {
+    const multi: SqlInstance = { ...good, settings: { ...good.settings, backupConfiguration: { ...good.settings?.backupConfiguration, location: undefined } } };
+    assert.equal(instanceProblems(multi).length, 1);
   });
 
   it("インスタンスがなければ違反", () => {
@@ -179,8 +193,8 @@ describe("serviceProblems・jobProblems・bucketProblems", () => {
   });
 
   it("入れ物は東京で、公開アクセスの防止が enforced", () => {
-    assert.deepEqual(bucketProblems("staging", { location: "ASIA-NORTHEAST1", public_access_prevention: "enforced", uniform_bucket_level_access: true }), []);
-    assert.equal(bucketProblems("staging", { location: "US", public_access_prevention: "inherited", uniform_bucket_level_access: false }).length, 3);
+    assert.deepEqual(bucketProblems("staging", { location: "ASIA-NORTHEAST1", public_access_prevention: "enforced", uniform_bucket_level_access: true, soft_delete_policy: { retentionDurationSeconds: "604800" } }), []);
+    assert.equal(bucketProblems("staging", { location: "US", public_access_prevention: "inherited", uniform_bucket_level_access: false }).length, 4);
   });
 });
 

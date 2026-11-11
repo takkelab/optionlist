@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { INSTANCE_CONNECTION, cleanupRunUri, envConfig } from "../../infra/config.ts";
+import { BACKUP, INSTANCE_CONNECTION, cleanupRunUri, envConfig } from "../../infra/config.ts";
 import { cleanupJobProblems, expectedGrants, policyProblems, projectPolicyProblems, schedulerProblems } from "../lib/infra-checks.ts";
 import type { Binding, Grant, RunJob, SchedulerJob } from "../lib/infra-checks.ts";
 
@@ -116,7 +116,11 @@ describe("削除のジョブの権限", () => {
 
   it("削除のジョブのサービスアカウントの cloudsql.client が足りなければ違反", () => {
     const { run, migrate } = c.serviceAccounts;
-    const policy = toPolicy([["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`]]);
+    // 本番は書き出しの Job のサービスアカウントもつなぐ（data.md §6）。それはあるとして、削除のジョブの分だけが足りない形
+    const policy = toPolicy([
+      ["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`],
+      ["roles/cloudsql.client", `serviceAccount:${BACKUP.serviceAccount}`],
+    ]);
     assert.equal(projectPolicyProblems("production", policy).length, 1);
   });
 });

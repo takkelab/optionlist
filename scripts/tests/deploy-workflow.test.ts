@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { ENV_NAMES, IMAGE, PROJECT_ID, REGION, WORKLOAD_IDENTITY_PROVIDER, envConfig } from "../../infra/config.ts";
+import { BACKUP, ENV_NAMES, IMAGE, PROJECT_ID, REGION, WORKLOAD_IDENTITY_PROVIDER, envConfig } from "../../infra/config.ts";
 import { githubProblems } from "../lib/infra-checks.ts";
 
 // deploy.yml の値が infra/config.ts（infra:setup・infra:check が使う）と同じで、0036・0055 の順番を守っていること（docs/decisions/0057）
@@ -45,6 +45,15 @@ describe("deploy.yml", () => {
       for (const line of body.split("\n").filter((l) => /gcloud run (deploy|jobs update)/.test(l))) assert.match(line, /--image "\$DIGEST_IMAGE"/);
     });
   }
+
+  // 書き出しの Job は本番だけ。マイグレーションの後で、出す前に差し替える（data.md §6）
+  it("本番は書き出しの Job のイメージも差し替える。確認用にはない", () => {
+    const body = jobBody("production");
+    assert.ok(body.includes(`BACKUP_JOB: ${BACKUP.job}`));
+    const order = ["Migrate the", "Update the backup job image", "Deploy to"].map((name) => stepIndex(body, name));
+    assert.deepEqual(order, order.toSorted((a, b) => a - b));
+    assert.doesNotMatch(jobBody("staging"), /BACKUP_JOB/);
+  });
 
   it("確認用は push、本番は workflow_dispatch のときだけ、main で動く", () => {
     assert.match(jobBody("staging"), /\n\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\n/);

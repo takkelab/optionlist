@@ -17,7 +17,9 @@ export type LogKind =
   | "server_started"
   | "server_start_failed"
   | "cleanup_result"
-  | "cleanup_failed";
+  | "cleanup_failed"
+  | "backup_result"
+  | "backup_failed";
 
 // 1 行に出すもの。ここにないキーは出さない（Cookie・復旧コード・タイトル・写真の名前をうっかり載せないため）
 export type LogEntry = {
@@ -27,7 +29,7 @@ export type LogEntry = {
   route?: string;
   status?: number;
   durationMs?: number;
-  // 削除のジョブが消した件数（種類ごと。data.md §5）。件数だけで、ID・ファイル名は入れない
+  // 削除のジョブが消した件数（種類ごと。data.md §5）・書き出しの大きさ（bytes。data.md §6）。数だけで、ID・ファイル名は入れない
   counts?: Record<string, number>;
 };
 

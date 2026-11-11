@@ -9,12 +9,15 @@
 // 秘密の値は画面に出さない（Secret Manager には標準入力で渡す）
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-  ARTIFACT_REPOSITORY, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID,
+  ARTIFACT_REPOSITORY, BACKUP, PHOTO_SOFT_DELETE_SECONDS, backupLifecycle, backupRunUri, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID,
   PROVIDER_CONDITION, PROVIDER_MAPPING, REGION, SERVICES, cleanupRunUri, deployPrincipal, envConfig, passwordOf, socketDatabaseUrl,
 } from "./config.ts";
 import type { EnvName } from "./config.ts";
-import { CliGcloud } from "./lib/gcloud.ts";
+import { CliGcloud, readJson } from "./lib/gcloud.ts";
 import type { Gcloud } from "./lib/gcloud.ts";
 import { CloudSqlProxy, readSecret } from "./lib/cloud-sql.ts";
 
@@ -62,9 +65,15 @@ const instance = (): void => {
       "retained-transaction-log-days": INSTANCE.transactionLogDays,
       "deletion-protection": true,
       "retain-backups-on-delete": true,
+      "backup-location": INSTANCE.backupLocation,
       // Cloud SQL Auth Proxy・Cloud Run のコネクタ（どちらも TLS）からだけつなぐ。承認済みのネットワークは足さない
       "ssl-mode": "ENCRYPTED_ONLY",
     });
+  }
+  // 前からあるインスタンスも、バックアップの置き場所を東京にそろえる（違うときだけ変える。docs/decisions/0061）
+  const current = readJson<{ settings?: { backupConfiguration?: { location?: string } } }>(gcloud, ["sql", "instances", "describe", INSTANCE.name], P);
+  if (current?.settings?.backupConfiguration?.location !== INSTANCE.backupLocation) {
+    gcloud.change(["sql", "instances", "patch", INSTANCE.name], { ...P, "backup-location": INSTANCE.backupLocation });
   }
   if (!exists(["secrets", "describe", INSTANCE.adminPasswordSecret])) {
     const password = newSecretValue();
@@ -155,6 +164,8 @@ const env = (name: EnvName): void => {
   for (const member of [run, cleanup]) {
     gcloud.change(["storage", "buckets", "add-iam-policy-binding", `gs://${c.bucket}`], { member: `serviceAccount:${member}`, role: "roles/storage.objectAdmin" });
   }
+  // 消した写真を 7 日間戻せるようにする（data.md §6）
+  gcloud.change(["storage", "buckets", "update", `gs://${c.bucket}`], { "soft-delete-duration": `${PHOTO_SOFT_DELETE_SECONDS}s` });
 
   ensureSecret(c.secrets.metricsToken, newSecretValue);
   ensureSecret(c.secrets.ipHashSecret, newSecretValue);
@@ -245,6 +256,64 @@ const env = (name: EnvName): void => {
   }
   // GitHub Actions の deploy.yml から、この環境の deploy_target のときだけ入れる
   gcloud.change(["iam", "service-accounts", "add-iam-policy-binding", deploy], { ...P, member: deployPrincipal(name), role: "roles/iam.workloadIdentityUser" });
+  if (name === "production") backup();
+};
+
+// 週 1 の書き出し（data.md §6。本番だけ）: 入れ物・サービスアカウント・Cloud Run Job・Scheduler・権限
+const backup = (): void => {
+  const c = envConfig("production");
+  const backupSa = BACKUP.serviceAccount;
+  if (!exists(["iam", "service-accounts", "describe", backupSa])) {
+    gcloud.change(["iam", "service-accounts", "create", backupSa.split("@")[0] ?? ""], { ...P, "display-name": "optionlist production backup" });
+  }
+  gcloud.change(["projects", "add-iam-policy-binding", PROJECT_ID], { member: `serviceAccount:${backupSa}`, role: "roles/cloudsql.client", condition: "None" });
+  gcloud.change(["secrets", "add-iam-policy-binding", BACKUP.databaseUrlSecret], { ...P, member: `serviceAccount:${backupSa}`, role: "roles/secretmanager.secretAccessor" });
+
+  // 入れ物（非公開。35 日で消える）。書き出しのサービスアカウントは作るだけ（読めない・消せない・上書きできない）
+  const bucket = `gs://${BACKUP.bucket}`;
+  if (!exists(["storage", "buckets", "describe", bucket])) {
+    gcloud.change(["storage", "buckets", "create", bucket], { ...P, location: REGION, "uniform-bucket-level-access": true, "public-access-prevention": true });
+  }
+  const dir = mkdtempSync(join(tmpdir(), "optionlist-lifecycle-"));
+  try {
+    const lifecycle = join(dir, "lifecycle.json");
+    writeFileSync(lifecycle, JSON.stringify(backupLifecycle()));
+    // soft delete は外す（既定の 7 日が付くと、35 日で消えたあとも戻せる形で残り、ポリシーの「最長 5 週間」を超える。docs/decisions/0061）
+    gcloud.change(["storage", "buckets", "update", bucket], { "lifecycle-file": lifecycle, "clear-soft-delete": true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  gcloud.change(["storage", "buckets", "add-iam-policy-binding", bucket], { member: `serviceAccount:${backupSa}`, role: "roles/storage.objectCreator" });
+
+  const jobFlags = {
+    ...R,
+    "service-account": backupSa,
+    "set-cloudsql-instances": INSTANCE_CONNECTION,
+    "update-secrets": `DATABASE_URL=${BACKUP.databaseUrlSecret}:latest`,
+    "update-env-vars": `APP_ENV=production,BACKUP_BUCKET=${BACKUP.bucket}`,
+    command: "node",
+    args: BACKUP.args.join(","),
+    "max-retries": 0,
+    "task-timeout": `${BACKUP.timeoutSeconds}s`,
+  };
+  if (exists(["run", "jobs", "describe", BACKUP.job], R)) gcloud.change(["run", "jobs", "update", BACKUP.job], jobFlags);
+  else gcloud.change(["run", "jobs", "create", BACKUP.job], { ...jobFlags, image: "us-docker.pkg.dev/cloudrun/container/job:latest" });
+
+  const schedulerFlags = {
+    ...L,
+    schedule: BACKUP.schedule.cron,
+    "time-zone": BACKUP.schedule.timeZone,
+    uri: backupRunUri(),
+    "http-method": "POST",
+    "oauth-service-account-email": c.serviceAccounts.scheduler,
+  };
+  if (exists(["scheduler", "jobs", "describe", BACKUP.scheduler], L)) gcloud.change(["scheduler", "jobs", "update", "http", BACKUP.scheduler], schedulerFlags);
+  else gcloud.change(["scheduler", "jobs", "create", "http", BACKUP.scheduler], schedulerFlags);
+
+  gcloud.change(["run", "jobs", "add-iam-policy-binding", BACKUP.job], { ...R, member: `serviceAccount:${c.serviceAccounts.scheduler}`, role: "roles/run.invoker" });
+  // deploy.yml が本番のデプロイでイメージを差し替える
+  gcloud.change(["run", "jobs", "add-iam-policy-binding", BACKUP.job], { ...R, member: `serviceAccount:${c.serviceAccounts.deploy}`, role: "roles/run.developer" });
+  gcloud.change(["iam", "service-accounts", "add-iam-policy-binding", backupSa], { ...P, member: `serviceAccount:${c.serviceAccounts.deploy}`, role: "roles/iam.serviceAccountUser" });
 };
 
 try {
