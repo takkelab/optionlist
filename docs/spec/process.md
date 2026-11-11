@@ -169,16 +169,29 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - `npm run infra:check -- production` が Scheduler のジョブ（ENABLED、毎日 4 時）も確かめて終了コード 0
 
 ### R10. バックアップ・監視・利用状況（docs/decisions/0041・0042・0043）
-- 週 1 の書き出しの Job（`ol_migrator` で `pg_dump --enable-row-security`、`optionlist_production` だけ）と入れ物、写真の soft delete、`npm run ops:restore-drill -- <staging|production>`（新しい一時的なインスタンスに戻して `optionlist_<env>` の利用者の表を数える。data.md §6）
-- アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
-- 集計のビュー（`usage_*`）と `ol_metrics`、`npm run metrics:usage` を 1 人あたりの指標に（metrics.md §6）
+量が多いので 3 つに分ける（docs/decisions/0060）。この順に進める（R10c のアラートが、R10b の書き出しの Job を見るため）。
+
+#### R10a. 利用状況
+- 集計のビュー（`usage_*`）と `ol_metrics`、`npm run metrics:usage` を 1 人あたりの指標に（metrics.md §6）。確認用・本番のログイン用のロール `ol_metrics_<env>` と、その接続先の秘密の値（`npm run infra:setup -- db <env>`）
 - 完了の条件
   - 共通の条件
-  - `npm run infra:check -- instance` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護を確かめ、`npm run infra:check -- production` が、写真の soft delete・書き出しの Job と Scheduler・アラートのポリシーと死活監視・予算のアラートと、`rls-checks.sql`（`ol_incident` が SELECT だけ、強いロールのメンバーになっているログインできるロールが 0 件、を含む。testing.md §7）を確かめて、どちらも終了コード 0
+  - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
+  - `npm run infra:check -- staging`・`production` が終了コード 0（利用状況の接続先の秘密の値が東京にあり、誰の権限も付いていないことを含む）
+  - マージして確認用にマイグレーションが入ったあと、`npm run metrics:usage -- --env staging` が終了コード 0 で、metrics.md §6 のすべての指標を出す（結果は記録の PR に書く）
+
+#### R10b. バックアップ
+- 週 1 の書き出しの Job（`ol_migrator` で `pg_dump --enable-row-security`、`optionlist_production` だけ）と入れ物、写真の soft delete、`npm run ops:restore-drill -- <staging|production>`（新しい一時的なインスタンスに戻して `optionlist_<env>` の利用者の表を数える。data.md §6）
+- 完了の条件
+  - 共通の条件
+  - `npm run infra:check -- instance` が、自動バックアップ・時点復旧・インスタンスを消してもバックアップを残す設定・削除保護を確かめ、`npm run infra:check -- production` が、写真の soft delete・書き出しの Job と Scheduler と、`rls-checks.sql`（`ol_incident` が SELECT だけ、強いロールのメンバーになっているログインできるロールが 0 件、を含む。testing.md §7）を確かめて、どちらも終了コード 0
   - 確認用で自分のデータ（項目・達成・写真）を作ったうえで、`npm run ops:restore-drill -- staging` が終了コード 0 で、`docs/ops/restore-drills.md` の表に `| optionlist_staging |` で結果が `成功` の行（data.md §6 の 3・5 の条件: バックアップの前後に残っていた ID がすべて戻り、空ではなく、前後で写真が変わっていない達成で「行があるのに写真がない」が 0 件）が 1 行増える（`grep -c "| optionlist_staging |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上）。本番は、まだ利用者の行がないので、ここでは訓練しない（R11 の 1 段目で行う。data.md §6）
   - 訓練のあと `gcloud sql instances list --filter="name:restore-drill-*" --format="value(name)"` が何も出さない（一時的なインスタンス〈`restore-drill-<日時>`。data.md §6〉を消した）
-  - `npm --prefix backend run test:file -- tests/migrations/rls.test.ts` が、`ol_metrics` がビュー以外を読めないことも確かめて通る
-  - `METRICS_DATABASE_URL=<確認用の接続先> npm run metrics:usage` が、metrics.md §6 のすべての指標を出す
+
+#### R10c. 監視
+- アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
+- 完了の条件
+  - 共通の条件
+  - `npm run infra:check -- production` が、アラートのポリシーと死活監視・予算のアラートも確かめて終了コード 0
   - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
 
 ### R11. 公開（docs/decisions/0045）

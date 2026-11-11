@@ -153,7 +153,7 @@
 | `ol_app` | する | アプリ（Cloud Run のサービス） | users・options・achievements の SELECT / INSERT / UPDATE / DELETE、マスターデータの SELECT、events の INSERT、§4 の認証の関数の EXECUTE。表の持ち主ではない | 自分の行だけ（下の RLS） |
 | `ol_cleanup` | する | 削除のジョブ（§5）だけ | users・options・achievements・events・auth_attempts の SELECT / DELETE だけ（UPDATE・INSERT はない） | `USING (true)`（SELECT・DELETE のポリシーだけ） |
 | `ol_metrics` | する | `npm run metrics:usage`（metrics.md §6）だけ | 集計のビュー（`usage_*`）の SELECT だけ。表は読めない（docs/decisions/0043） | なし（表の権限がない） |
-| `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | 関数とビューの中で必要な表だけを読む・書く | `USING (true) WITH CHECK (true)` |
+| `ol_definer` | しない | 認証の関数と集計のビューの持ち主 | 関数とビューの中で必要な表だけを読む・書く（users の SELECT / INSERT / UPDATE、auth_attempts の SELECT / INSERT、options・achievements・events の SELECT） | `USING (true) WITH CHECK (true)` |
 | `ol_incident` | しない | 障害対応で中身を見るときだけ（docs/decisions/0043） | users・options・achievements・events の SELECT だけ | `USING (true)`（SELECT のポリシーだけ） |
 
 - ロールはクラスタ全体のものなので、マイグレーションではなく `npm --prefix backend run db:roles`（手元。テストは `db:roles:test`）が superuser（`ADMIN_DATABASE_URL`）で作る。パスワードは `DATABASE_URL`・`APP_DATABASE_URL` などの URL から取り、何度流しても同じ結果になる。あわせて `DATABASE_URL` の DB を `ol_migrator` の持ち物として作る（持ち主が違えば `--recreate` を付けたときだけ消して作り直す。`db:roles:test` は名前が `_test` で終わる DB だけを扱い、いつも作り直す）。表の権限・ポリシー・関数はマイグレーションで付ける
@@ -165,6 +165,7 @@
   - ログイン用のロールには、表・関数の権限を直接付けない。確認用・本番の `ol_migrator` には CREATEDB を付けない（マイグレーションは DB を作らない `dbmate migrate` で流す。docs/decisions/0048・0057）
   - 作るのは `npm run infra:setup -- db <env>`。Cloud SQL Auth Proxy 越しに、管理用のユーザー（`postgres`。superuser ではない）で `npm --prefix backend run db:roles:cloud -- --env <env>` を流す。superuser でないと、`CREATE DATABASE … OWNER ol_owner_<env>` と DB・`public` スキーマの権限の付け替えに `ol_owner_<env>` への SET が要るので、その間だけ自分に付けて外す。持ち主が違う DB は消さずに止まる。属性（`NOSUPERUSER` など）は今の値と違うものだけを書く（superuser でないと、書くだけで拒まれる）
 - 本番で中身を見るのは障害対応のときだけにする。そのときだけ、Cloud SQL の IAM の管理用ユーザーに `ol_incident` を付け（`GRANT ol_incident TO <IAM のユーザー>`）、終わったらすぐ外す（`REVOKE`）。付けた・外したことは Cloud Audit Logs に残り、日付と理由を `docs/ops/data-access.md` に書く。IAM の管理用ユーザーそのものには、利用者の表のポリシーを付けない（ふだんは 0 行しか見えない）
+- 集計のビュー（metrics.md §6。docs/decisions/0060）は `usage_periods`（今日を含む直近 7 日・28 日〈始まりは日本時間の 0 時〉ごとの使った人・達成した人・達成・提案から追加・初回達成までの日数の中央値・`client_error`）、`usage_retention`（4 週前の週に作ったアカウントと、そのうちその後も使った人）、`usage_stale_pending`（滞留の中央値）、`usage_client_error_messages`（直近 4 週間の多いメッセージ 3 つ）。どれも件数・割合・日数だけを返し、ID・タイトル・写真の名前を返さない。持ち主は `ol_definer` で、読めるのは `ol_metrics` だけ。ビューの中の表は持ち主の権限と `USING (true)` のポリシーで読むので、RLS で 0 件にならない
 - `USING (true)` のポリシーを持ってよいのは、上の表の `ol_migrator`・`ol_cleanup`・`ol_definer`・`ol_incident` だけ（testing.md §7 で確かめる）
 - `ol_migrator` は `ol_definer` のメンバーにする。ただし `GRANT ol_definer TO ol_migrator WITH INHERIT FALSE, SET TRUE`（権限は引き継がず、`SET ROLE` だけができる）にする。マイグレーションで関数とビューを作り、持ち主を `ol_definer` に移す（`ALTER FUNCTION/VIEW … OWNER TO ol_definer`）・作り直すには、PostgreSQL 16 以降では `SET ROLE` できることが要るため。強いロールへのメンバーシップの例外はこれと、ロールを作ったユーザーに自動で付く ADMIN だけ（testing.md §7）
   - INHERIT がないので、`ol_migrator` のままでは `ol_definer` が持つ関数・ビューを `CREATE OR REPLACE`・`ALTER`・`DROP` できない（持ち主の判定は引き継いだ権限で行うため）。`ol_definer` が持つものを作る・直す・消すマイグレーション（up と down の両方）は、その部分を `SET ROLE ol_definer;` … `RESET ROLE;` で包み、`ol_definer` として作る（作れば持ち主は最初から `ol_definer` なので、`OWNER TO` も要らない）。権限の付け外しも持ち主しかできないので、同じ `SET ROLE` の中で流す: 認証の関数は作るたびに `REVOKE EXECUTE … FROM PUBLIC`（関数は既定で PUBLIC が実行できるため）と `GRANT EXECUTE … TO ol_app`、集計のビューは `GRANT SELECT … TO ol_metrics`。認証の関数を実行できるのは `ol_app` だけにする（testing.md §7）
@@ -220,5 +221,5 @@ Cloud SQL の自動バックアップと時点復旧は、**インスタンス�
   4. そのバックアップを一時的なインスタンス（名前は `restore-drill-<YYYYMMDDHHmm>`。Cloud SQL は消したインスタンスの名前をしばらく使い直せないので、毎回変える）に戻し、`optionlist_<env>` の ID の集合 R を読む
   5. 成功の条件: S′ のすべてが R にあること（R にしかない ID は、M より大きい新しい行か、バックアップのあとで消えた行なので、失敗にしない。利用者が途中で項目を消しても崩れない）。あわせて、「行があるのに写真がない」が 0 件であること。数えるのは、S′ に入っている achievements のうち、戻した DB と 3 で読んだ今の DB で `photo_filename` が同じもの（バックアップの前後で写真が変わっていないもの）だけで、そのファイルが今の入れ物にあるかを確かめる。「写真があるのに行がない」は訓練では数えない（バックアップのあとに付けた写真や、削除のジョブが 1 日たってから消す行のない写真〈§5〉が、ふだんから入れ物にあるため。行のない写真は削除のジョブが片付ける）
   6. 一時的なインスタンスとその場で取ったバックアップを消し、`docs/ops/restore-drills.md` の表（`| 日付 | optionlist_<env> | 表ごとの ID の数 | 行があるのに写真がない | 結果 |`）に 1 行足す。結果の列は `成功` か `失敗` のどちらかで、`ops:restore-drill` がこの文字で書く
-- 訓練を確認用（`staging`）でもできるのは、仕組みを本番の前に確かめるため（R10）。本番の訓練は、本番に利用者の行が入ってから（公開の 1 段目。docs/decisions/0045）行い、その後は四半期ごとに本番で行う
+- 訓練を確認用（`staging`）でもできるのは、仕組みを本番の前に確かめるため（R10b）。本番の訓練は、本番に利用者の行が入ってから（公開の 1 段目。docs/decisions/0045）行い、その後は四半期ごとに本番で行う
 - 一時的なインスタンスは、運営者だけが触る（確認用の環境ではない）。確認用の環境には、本番のデータもバックアップもコピーしない（docs/decisions/0036）

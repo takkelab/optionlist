@@ -33,6 +33,15 @@ describe("policyProblems", () => {
     assert.equal(policyProblems(secret, toPolicy([...expected, ["roles/secretmanager.secretAccessor", productionDeploy]]), expected).length, 1);
   });
 
+  // metrics:usage -- --env が手元で読むだけ。Cloud Run のどのサービスアカウントにも読ませない（metrics.md §6）
+  it("利用状況の接続先の秘密の値は誰にも読ませず、アプリが読めたら違反", () => {
+    const c = envConfig("staging");
+    const [, expected] = staging.secrets.find(([name]) => name === c.secrets.metricsDatabaseUrl) ?? ["", [["x", "y"]]];
+    assert.deepEqual(expected, []);
+    const appCanRead = toPolicy([["roles/secretmanager.secretAccessor", `serviceAccount:${c.serviceAccounts.run}`]]);
+    assert.equal(policyProblems(c.secrets.metricsDatabaseUrl, appCanRead, expected).length, 1);
+  });
+
   it("足りない組も違反", () => {
     assert.deepEqual(policyProblems("j", toPolicy([]), staging.job), [`j: serviceAccount:${envConfig("staging").serviceAccounts.deploy} に roles/run.developer がない`]);
   });
@@ -216,17 +225,25 @@ describe("databaseProblems", () => {
     { name: "ol_migrator_staging", login: true, createdb: false },
     { name: "ol_cleanup", login: false, createdb: false },
     { name: "ol_cleanup_staging", login: true, createdb: false },
+    { name: "ol_metrics", login: false, createdb: false },
+    { name: "ol_metrics_staging", login: true, createdb: false },
     { name: "ol_owner_staging", login: false, createdb: false },
   ];
   const good = {
     rlsViolations: [["no_bypassrls_or_superuser", []]] as [string, unknown[]][],
     owner: "ol_owner_staging",
-    connectGrantees: ["ol_owner_staging", "postgres", "ol_migrator_staging", "ol_app_staging", "ol_cleanup_staging"],
+    connectGrantees: ["ol_owner_staging", "postgres", "ol_migrator_staging", "ol_app_staging", "ol_cleanup_staging", "ol_metrics_staging"],
     roles,
   };
 
   it("持ち主が ol_owner_staging で、CONNECT がこの環境のログイン用のロールだけで、RLS の違反がなければ合格", () => {
     assert.deepEqual(databaseProblems("staging", good), []);
+  });
+
+  // metrics:usage -- --env がつなぐロール（metrics.md §6）。作り忘れを infra:check で見つける
+  it("ol_metrics_staging がなければ違反", () => {
+    const facts = { ...good, roles: roles.filter((r) => r.name !== "ol_metrics_staging") };
+    assert.deepEqual(databaseProblems("staging", facts), ["ol_metrics_staging がない"]);
   });
 
   it("PUBLIC・本番のロールが CONNECT でき、グループのロールにログインできれば違反", () => {

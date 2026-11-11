@@ -10,12 +10,12 @@
 
 # Commands
 - 初回: `npm install` / `npm --prefix backend install` / `npm --prefix frontend install` / `npx playwright install chromium`（E2E のブラウザ）。PostgreSQL 17 は `winget install PostgreSQL.PostgreSQL.17`（superuser の `postgres` のパスワードを決める。`.env.example` は `postgres` の前提）
-- DB 作成: `backend/.env.example` を `backend/.env` にコピーし（`ADMIN_DATABASE_URL` は superuser の postgres、`DATABASE_URL` は ol_migrator、`APP_DATABASE_URL` は ol_app、`CLEANUP_DATABASE_URL` は ol_cleanup、`IP_HASH_SECRET`）、`npm --prefix backend run db:roles`（ロールと DB を作る。DB の持ち主が ol_migrator でなければ止まるので、消して作り直すなら `-- --recreate`）→ `npm --prefix backend run db:migrate`（`db/schema.sql` も書き出す）。`schema.sql` を psql に流し込む手順は使わない
+- DB 作成: `backend/.env.example` を `backend/.env` にコピーし（`ADMIN_DATABASE_URL` は superuser の postgres、`DATABASE_URL` は ol_migrator、`APP_DATABASE_URL` は ol_app、`CLEANUP_DATABASE_URL` は ol_cleanup、`METRICS_DATABASE_URL` は ol_metrics、`IP_HASH_SECRET`。前からある `.env`・`.env.test` に足りない接続先があれば、`.env.example`・`.env.test.example` から書き足して `db:roles`・`db:roles:test` を流し直す）、`npm --prefix backend run db:roles`（ロールと DB を作る。DB の持ち主が ol_migrator でなければ止まるので、消して作り直すなら `-- --recreate`）→ `npm --prefix backend run db:migrate`（`db/schema.sql` も書き出す）。`schema.sql` を psql に流し込む手順は使わない
 - テスト用 DB: `backend/.env.test.example` を `backend/.env.test` にコピーして値を入れる。`npm test` が最初に `db:roles:test`（ロールとテスト用 DB）とマイグレーションを流す。`test:file` は流さないので、先に `npm --prefix backend run db:roles:test` と `db:migrate:test`
 - マイグレーションの追加: `npm --prefix backend run db:new -- <名前>` → `backend/db/migrations/` に up / down を書き、`tests/migrations/migrations.test.ts` を直す
 - 性能用データ: `npm --prefix backend run db:perf-data`（`.env.test` の DB に入れる。名前が `_test` で終わる DB 以外では止まる）
 - Backend 起動: `npm --prefix backend run dev`（http://localhost:8000）
-- 削除のジョブ（data.md §5）を手元で流す: `npm --prefix backend run cleanup`（`backend/.env` の `CLEANUP_DATABASE_URL`〈ol_cleanup〉でつなぐ。`.env.example` に足したので、前からある `.env`・`.env.test` には `CLEANUP_DATABASE_URL` を書き足して `db:roles`・`db:roles:test` を流し直す）。確認用で流すのは `gcloud run jobs execute optionlist-staging-cleanup --region asia-northeast1 --wait`
+- 削除のジョブ（data.md §5）を手元で流す: `npm --prefix backend run cleanup`（`backend/.env` の `CLEANUP_DATABASE_URL`〈ol_cleanup〉でつなぐ）。確認用で流すのは `gcloud run jobs execute optionlist-staging-cleanup --region asia-northeast1 --wait`
 - Frontend 起動: `npm --prefix frontend run dev`（http://localhost:5173、/api は backend にプロキシ）
 - スマホから触る: `npm --prefix frontend run dev:lan` で起動し、同じ Wi-Fi のスマホで表示された Network の URL（http://<PC の IP>:5173）を開く。初回は Windows のファイアウォールの許可が要る
 - 型チェック（backend・frontend・scripts・tools・e2e）: `npm run typecheck`
@@ -28,7 +28,7 @@
 - 性能テスト: `npm run test:perf`（`.env.test` の DB に性能用データを入れ直してから流す。結果は `backend/coverage/perf/results.json`、判定は `metrics:check`）
 - 目標値の判定（CI と同じ）: `npm run metrics:check`。結果は `metrics-report.json`。目標値は `metrics.config.json`
 - 品質チェックスクリプト自体のテスト: `npm run test:scripts`
-- 利用状況（metrics.md §6。達成数・frontend のエラー数など）: `npm run metrics:usage`（`backend/.env` の DB を読むだけ）
+- 利用状況（metrics.md §6。達成した人の割合・frontend のエラー数など）: `npm run metrics:usage`（`backend/.env` の `METRICS_DATABASE_URL`〈ol_metrics〉で集計のビュー `usage_*` だけを読む）。確認用・本番は `npm run metrics:usage -- --env <staging|production>`（Cloud SQL Auth Proxy 越し。docs/decisions/0060）
 - 手元で `/api/metrics` を見る: `backend/.env` に `METRICS_TOKEN` を書いて起動し、`curl -H "Authorization: Bearer <トークン>" http://localhost:8000/api/metrics`（トークンがない・違うと 404。docs/decisions/0038）
 - 確認用・本番の環境（Google Cloud のプロジェクト takkelab-apps。ID などの値は `infra/config.ts`）: `npm run infra:setup -- <apis|instance|shared|db <env>|env <env>> [--dry-run]` で作り（何度流しても同じ結果。名前と値は `infra/config.ts`）、`npm run infra:check -- <instance|staging|production>` で確かめる。どちらも gcloud にログインしていることと、Cloud SQL Auth Proxy（`gcloud components install cloud-sql-proxy`）が要る。有料のリソースを作るので、流す前に `--dry-run` で見せて確かめる（docs/decisions/0057）
 - デプロイ: main に入ると `.github/workflows/deploy.yml` が確認用へ出す。本番へは Actions の画面から Deploy を `workflow_dispatch` で起動する（確認用でトラフィックを 100% 受けているイメージを出す。docs/decisions/0055）

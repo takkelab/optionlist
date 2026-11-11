@@ -69,9 +69,10 @@ export type EnvConfig = {
   origin: string;
   // scheduler: Cloud Scheduler が削除のジョブを起動するときに名乗る（Job の run.invoker だけを持つ）
   serviceAccounts: { run: string; migrate: string; cleanup: string; scheduler: string; deploy: string };
-  secrets: { appDatabaseUrl: string; databaseUrl: string; cleanupDatabaseUrl: string; metricsToken: string; ipHashSecret: string };
+  // metricsDatabaseUrl: npm run metrics:usage -- --env <env> が手元で読む（Cloud Run からは使わないので、誰にも読む権限を付けない）
+  secrets: { appDatabaseUrl: string; databaseUrl: string; cleanupDatabaseUrl: string; metricsDatabaseUrl: string; metricsToken: string; ipHashSecret: string };
   // owner: この環境の DB の持ち主（ログインしない。誰もメンバーにしない。docs/decisions/0056）
-  roles: { migrator: string; app: string; cleanup: string; owner: string };
+  roles: { migrator: string; app: string; cleanup: string; metrics: string; owner: string };
 };
 
 const sa = (id: string) => `${id}@${PROJECT_ID}.iam.gserviceaccount.com`;
@@ -98,10 +99,11 @@ export const envConfig = (env: EnvName): EnvConfig => ({
     appDatabaseUrl: `optionlist-${env}-app-database-url`,
     databaseUrl: `optionlist-${env}-database-url`,
     cleanupDatabaseUrl: `optionlist-${env}-cleanup-database-url`,
+    metricsDatabaseUrl: `optionlist-${env}-metrics-database-url`,
     metricsToken: `optionlist-${env}-metrics-token`,
     ipHashSecret: `optionlist-${env}-ip-hash-secret`,
   },
-  roles: { migrator: `ol_migrator_${env}`, app: `ol_app_${env}`, cleanup: `ol_cleanup_${env}`, owner: `ol_owner_${env}` },
+  roles: { migrator: `ol_migrator_${env}`, app: `ol_app_${env}`, cleanup: `ol_cleanup_${env}`, metrics: `ol_metrics_${env}`, owner: `ol_owner_${env}` },
 });
 
 // 削除のジョブ（data.md §5）。コマンドは Dockerfile の CMD と同じ形（--import tsx は backend のフォルダで探す）

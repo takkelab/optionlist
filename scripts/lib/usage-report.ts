@@ -1,35 +1,52 @@
-// npm run metrics:usage の集計（metrics.md §6）。DB は UsageSource 越しに読み、テストではフェイクを渡す
+// npm run metrics:usage の集計（metrics.md §6）。DB は UsageSource 越しに集計のビュー（usage_*）を読み、テストではフェイクを渡す
+// ビューは件数・日数だけを返す（docs/decisions/0043）。ここでは「使った人 1 人あたり」に直して表にする
 
 export type ErrorCount = { message: string; count: number };
 
-// 期間はすべて [from, to)
-export interface UsageSource {
-  achievements(from: Date, to: Date): Promise<number>;
+// 1 つの期間（直近 7 日・28 日）の件数。ビュー usage_periods の 1 行
+export type PeriodCounts = {
+  // 期間内に last_seen_at を書いた人
+  activeUsers: number;
+  // 使った人のうち、期間内に達成がある人
+  achievers: number;
+  achievements: number;
   // 期間内に作った option のうち、提案から追加したもの（消した項目は数えない）
-  suggestionAdds(from: Date, to: Date): Promise<number>;
-  // 期間内に初めて達成した option の、作成から最初の達成までの秒数
-  firstAchievementSeconds(from: Date, to: Date): Promise<number[]>;
-  // 今の pending のうち、before より前に作ったもの
-  stalePending(before: Date): Promise<number>;
-  // client_error をメッセージごとに数えたもの（多い順）
-  clientErrors(from: Date, to: Date): Promise<ErrorCount[]>;
+  suggestionAdds: number;
+  // 期間内に初めて達成した option の、作成から最初の達成までの日数の中央値。なければ null
+  firstAchievementDaysMedian: number | null;
+  clientErrors: number;
+};
+
+// 4 週前の週に作ったアカウント（cohort）のうち、その後の 3 週にも使った人（retained）
+export type Retention = { cohort: number; retained: number };
+
+export interface UsageSource {
+  periods(): Promise<{ week: PeriodCounts; fourWeeks: PeriodCounts }>;
+  retention(): Promise<Retention>;
+  // 直近 4 週間に使った人ごとの「作成から 90 日以上の pending」の件数の中央値。使った人がいなければ null
+  stalePendingMedian(): Promise<number | null>;
+  // 直近 4 週間の client_error で多いメッセージ（3 つまで、多い順）
+  topClientErrors(): Promise<ErrorCount[]>;
 }
 
+// 割り算の値は、使った人が 0 なら null（表では -）
 export type PeriodUsage = {
-  achievements: number;
-  suggestionAdds: number;
-  // 中央値（日）。初めての達成がなければ null
+  activeUsers: number;
+  achievers: number;
+  achieverRate: number | null;
+  // 件数は ÷ 使った人。4 週間はさらに 4 で割って週あたりにする
+  achievementsPerUser: number | null;
+  suggestionAddsPerUser: number | null;
   firstAchievementDays: number | null;
-  clientErrors: number;
+  clientErrorsPer100Users: number | null;
 };
 
 export type Usage = {
   at: Date;
   week: PeriodUsage;
-  // 直近 4 週間。件数は 4 で割って週あたりにする（中央値はそのまま）
   fourWeeksPerWeek: PeriodUsage;
-  stalePending: number;
-  // 直近 4 週間で多いエラー（3 つまで）
+  retention: Retention;
+  stalePendingMedian: number | null;
   topErrors: ErrorCount[];
 };
 
@@ -38,12 +55,9 @@ export interface UsageReporter {
   format(usage: Usage): string;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEK_MS = 7 * DAY_MS;
+// 目標値（metrics.md §6 ※仮決め）。ほかは観測
+const CLIENT_ERRORS_MAX_PER_100_USERS = 5;
 const STALE_DAYS = 90;
-const TOP_ERRORS = 3;
-// 目標値（metrics.md §6）。ほかは観測
-const ACHIEVEMENTS_MIN = 1;
 
 export class MetricsUsageReporter implements UsageReporter {
   readonly #source: UsageSource;
@@ -55,24 +69,29 @@ export class MetricsUsageReporter implements UsageReporter {
   }
 
   async collect(): Promise<Usage> {
-    const at = this.#now();
-    const weekAgo = new Date(at.getTime() - WEEK_MS);
-    const fourWeeksAgo = new Date(at.getTime() - 4 * WEEK_MS);
-    const week = await this.#period(weekAgo, at, 1);
-    const fourWeeks = await this.#period(fourWeeksAgo, at, 4);
-    const stalePending = await this.#source.stalePending(new Date(at.getTime() - STALE_DAYS * DAY_MS));
-    const errors = await this.#source.clientErrors(fourWeeksAgo, at);
-    return { at, week, fourWeeksPerWeek: fourWeeks, stalePending, topErrors: errors.slice(0, TOP_ERRORS) };
+    const { week, fourWeeks } = await this.#source.periods();
+    return {
+      at: this.#now(),
+      week: this.#perUser(week, 1),
+      fourWeeksPerWeek: this.#perUser(fourWeeks, 4),
+      retention: await this.#source.retention(),
+      stalePendingMedian: await this.#source.stalePendingMedian(),
+      topErrors: await this.#source.topClientErrors(),
+    };
   }
 
   format(usage: Usage): string {
-    const { week, fourWeeksPerWeek: four } = usage;
+    const { week, fourWeeksPerWeek: four, retention } = usage;
+    const errorsOk = (value: number | null) => (value === null ? "-" : `${this.#number(value)} ${value <= CLIENT_ERRORS_MAX_PER_100_USERS ? "✓" : "✗"}`);
     const rows = [
-      ["**週あたりの達成数**", this.#judged(week.achievements, week.achievements >= ACHIEVEMENTS_MIN), this.#judged(four.achievements, four.achievements >= ACHIEVEMENTS_MIN), `${ACHIEVEMENTS_MIN} 件以上`],
-      ["提案から追加した件数", this.#number(week.suggestionAdds), this.#number(four.suggestionAdds), "観測"],
+      ["**達成した人の割合**", this.#rate(week.achieverRate, week.achievers, week.activeUsers), this.#rate(four.achieverRate, four.achievers, four.activeUsers), "観測"],
+      ["1 人あたりの達成数", this.#optional(week.achievementsPerUser), this.#optional(four.achievementsPerUser), "観測"],
+      ["使った人の数", `${week.activeUsers} 人`, `${four.activeUsers} 人（4 週間で）`, "観測"],
+      ["続けて使った人の割合（4 週前の週に作ったアカウント）", this.#rate(retention.cohort === 0 ? null : retention.retained / retention.cohort, retention.retained, retention.cohort), "", "観測"],
+      ["提案から追加した件数（1 人あたり）", this.#optional(week.suggestionAddsPerUser), this.#optional(four.suggestionAddsPerUser), "観測"],
       ["追加から初回達成までの日数（中央値）", this.#days(week.firstAchievementDays), this.#days(four.firstAchievementDays), "観測"],
-      ["frontend のエラー数", this.#judged(week.clientErrors, week.clientErrors === 0), this.#judged(four.clientErrors, four.clientErrors === 0), "0 件"],
-      [`やりたいリストの滞留（作って ${STALE_DAYS} 日以上の pending）`, `${usage.stalePending}（今の件数）`, "", "観測"],
+      [`やりたいリストの滞留（作って ${STALE_DAYS} 日以上の pending の件数。1 人あたりの中央値）`, this.#optional(usage.stalePendingMedian), "", "観測"],
+      ["frontend のエラー数（使った人 100 人あたり）", errorsOk(week.clientErrorsPer100Users), errorsOk(four.clientErrorsPer100Users), `${CLIENT_ERRORS_MAX_PER_100_USERS} 件以下 / 週`],
     ];
     const lines = [
       `# 利用状況（${usage.at.toLocaleString("ja-JP")} 時点）`,
@@ -87,32 +106,31 @@ export class MetricsUsageReporter implements UsageReporter {
     return `${lines.join("\n")}\n`;
   }
 
-  async #period(from: Date, to: Date, weeks: number): Promise<PeriodUsage> {
-    const errors = await this.#source.clientErrors(from, to);
-    const seconds = await this.#source.firstAchievementSeconds(from, to);
-    const median = this.#median(seconds);
+  #perUser(counts: PeriodCounts, weeks: number): PeriodUsage {
+    const users = counts.activeUsers;
+    const per = (value: number) => (users === 0 ? null : value / users / weeks);
     return {
-      achievements: (await this.#source.achievements(from, to)) / weeks,
-      suggestionAdds: (await this.#source.suggestionAdds(from, to)) / weeks,
-      firstAchievementDays: median === null ? null : median / (DAY_MS / 1000),
-      clientErrors: errors.reduce((sum, e) => sum + e.count, 0) / weeks,
+      activeUsers: users,
+      achievers: counts.achievers,
+      achieverRate: users === 0 ? null : counts.achievers / users,
+      achievementsPerUser: per(counts.achievements),
+      suggestionAddsPerUser: per(counts.suggestionAdds),
+      firstAchievementDays: counts.firstAchievementDaysMedian,
+      clientErrorsPer100Users: users === 0 ? null : (counts.clientErrors / users / weeks) * 100,
     };
   }
 
-  #median(values: number[]): number | null {
-    if (values.length === 0) return null;
-    const sorted = values.toSorted((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 1 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+  #rate(rate: number | null, part: number, whole: number): string {
+    return rate === null ? "-" : `${Math.round(rate * 100)}%（${part} / ${whole} 人）`;
   }
 
-  #judged(value: number, ok: boolean): string {
-    return `${this.#number(value)} ${ok ? "✓" : "✗"}`;
-  }
-
-  // 週あたりに割った値は小数 1 桁まで
+  // 割った値は小数 2 桁まで（1 人あたりの値は 1 より小さいことが多い）
   #number(value: number): string {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
+  #optional(value: number | null): string {
+    return value === null ? "-" : this.#number(value);
   }
 
   #days(value: number | null): string {

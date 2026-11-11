@@ -36,6 +36,8 @@ jobs:
       DATABASE_URL: postgres://ol_migrator:ol_migrator@127.0.0.1:5432/optionlist_test?sslmode=disable
       APP_DATABASE_URL: postgres://ol_app:ol_app@127.0.0.1:5432/optionlist_test?sslmode=disable
       CLEANUP_DATABASE_URL: postgres://ol_cleanup:ol_cleanup@127.0.0.1:5432/optionlist_test?sslmode=disable
+      # 集計のビューだけを読む ol_metrics（rls.test・pg-usage-source.test。metrics.md §6）
+      METRICS_DATABASE_URL: postgres://ol_metrics:ol_metrics@127.0.0.1:5432/optionlist_test?sslmode=disable
       IP_HASH_SECRET: ci-ip-hash-secret
       # GcsPhotoFiles のテストがつなぐ fake-gcs-server（下の Start fake-gcs-server。CI では GCS のテストを飛ばさない。docs/decisions/0051）
       GCS_EMULATOR_URL: http://localhost:4443
@@ -64,6 +66,7 @@ jobs:
             echo "DATABASE_URL=$DATABASE_URL"
             echo "APP_DATABASE_URL=$APP_DATABASE_URL"
             echo "CLEANUP_DATABASE_URL=$CLEANUP_DATABASE_URL"
+            echo "METRICS_DATABASE_URL=$METRICS_DATABASE_URL"
             echo "IP_HASH_SECRET=$IP_HASH_SECRET"
             echo "GCS_EMULATOR_URL=$GCS_EMULATOR_URL"
           } > backend/.env.test
