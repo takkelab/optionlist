@@ -59,15 +59,19 @@ export type EnvConfig = {
   env: EnvName;
   service: string;
   migrateJob: string;
+  // 削除のジョブ（data.md §5）と、それを毎日 4 時（日本時間）に動かす Cloud Scheduler のジョブ
+  cleanupJob: string;
+  cleanupScheduler: string;
   bucket: string;
   database: string;
   maxInstances: number;
   // Cloud Run が決める URL（https://<サービス>-<プロジェクト番号>.<地域>.run.app）。独自ドメインは R11 の前に決める（docs/decisions/0057）
   origin: string;
-  serviceAccounts: { run: string; migrate: string; deploy: string };
-  secrets: { appDatabaseUrl: string; databaseUrl: string; metricsToken: string; ipHashSecret: string };
+  // scheduler: Cloud Scheduler が削除のジョブを起動するときに名乗る（Job の run.invoker だけを持つ）
+  serviceAccounts: { run: string; migrate: string; cleanup: string; scheduler: string; deploy: string };
+  secrets: { appDatabaseUrl: string; databaseUrl: string; cleanupDatabaseUrl: string; metricsToken: string; ipHashSecret: string };
   // owner: この環境の DB の持ち主（ログインしない。誰もメンバーにしない。docs/decisions/0056）
-  roles: { migrator: string; app: string; owner: string };
+  roles: { migrator: string; app: string; cleanup: string; owner: string };
 };
 
 const sa = (id: string) => `${id}@${PROJECT_ID}.iam.gserviceaccount.com`;
@@ -76,19 +80,37 @@ export const envConfig = (env: EnvName): EnvConfig => ({
   env,
   service: `optionlist-${env}`,
   migrateJob: `optionlist-${env}-migrate`,
+  cleanupJob: `optionlist-${env}-cleanup`,
+  cleanupScheduler: `optionlist-${env}-cleanup-daily`,
   bucket: `optionlist-${env}-photos`,
   database: `optionlist_${env}`,
   maxInstances: env === "production" ? 3 : 2,
   origin: `https://optionlist-${env}-${PROJECT_NUMBER}.${REGION}.run.app`,
-  serviceAccounts: { run: sa(`optionlist-${env}-run`), migrate: sa(`optionlist-${env}-migrate`), deploy: sa(`optionlist-${env}-deploy`) },
+  serviceAccounts: {
+    run: sa(`optionlist-${env}-run`),
+    migrate: sa(`optionlist-${env}-migrate`),
+    cleanup: sa(`optionlist-${env}-cleanup`),
+    // サービスアカウントの ID は 30 文字まで（optionlist-production-scheduler は 31 文字になる）
+    scheduler: sa(`optionlist-${env}-sched`),
+    deploy: sa(`optionlist-${env}-deploy`),
+  },
   secrets: {
     appDatabaseUrl: `optionlist-${env}-app-database-url`,
     databaseUrl: `optionlist-${env}-database-url`,
+    cleanupDatabaseUrl: `optionlist-${env}-cleanup-database-url`,
     metricsToken: `optionlist-${env}-metrics-token`,
     ipHashSecret: `optionlist-${env}-ip-hash-secret`,
   },
-  roles: { migrator: `ol_migrator_${env}`, app: `ol_app_${env}`, owner: `ol_owner_${env}` },
+  roles: { migrator: `ol_migrator_${env}`, app: `ol_app_${env}`, cleanup: `ol_cleanup_${env}`, owner: `ol_owner_${env}` },
 });
+
+// 削除のジョブ（data.md §5）。コマンドは Dockerfile の CMD と同じ形（--import tsx は backend のフォルダで探す）
+export const CLEANUP_JOB_ARGS = ["--import", "tsx", "--max-semi-space-size=4", "src/jobs/cleanup.ts"] as const;
+export const CLEANUP_JOB_TIMEOUT_SECONDS = 3600;
+export const CLEANUP_SCHEDULE = { cron: "0 4 * * *", timeZone: "Asia/Tokyo" } as const;
+// Cloud Scheduler が叩く、Cloud Run Job を起動する API
+export const cleanupRunUri = (c: EnvConfig): string =>
+  `https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${c.cleanupJob}:run`;
 
 // Cloud Run から Cloud SQL へは Unix ソケットでつなぐ（--add-cloudsql-instances）。pg（host）と dbmate（host を socket と同じに読む）の両方が読める形
 // ホストが空の URL は WHATWG の URL では読めないので、文字列で組み立てる
@@ -117,4 +139,5 @@ export const SERVICES = [
   "sts.googleapis.com",
   "cloudresourcemanager.googleapis.com",
   "logging.googleapis.com",
+  "cloudscheduler.googleapis.com",
 ] as const;

@@ -21,4 +21,9 @@ export class FakeLogger implements Logger {
   entries(): LogEntry[] {
     return [...this.#entries];
   }
+
+  // info で渡された行
+  infos(): LogEntry[] {
+    return [...this.#infos];
+  }
 }

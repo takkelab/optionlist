@@ -11,7 +11,7 @@ export interface PoolErrorLogger {
   error(entry: { kind: "db_pool_error"; message: string; error: unknown }): void;
 }
 
-export type DatabaseUrlName = "APP_DATABASE_URL" | "DATABASE_URL";
+export type DatabaseUrlName = "APP_DATABASE_URL" | "DATABASE_URL" | "CLEANUP_DATABASE_URL";
 
 const { types: builtinTypes } = pg;
 const INT8_OID = 20;

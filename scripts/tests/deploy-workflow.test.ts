@@ -29,15 +29,18 @@ describe("deploy.yml", () => {
   for (const env of ENV_NAMES) {
     it(`${env} のサービス・Job・URL・デプロイ用のサービスアカウントが infra/config.ts と同じ`, () => {
       const c = envConfig(env);
-      for (const value of [`SERVICE: ${c.service}`, `MIGRATE_JOB: ${c.migrateJob}`, `ORIGIN: ${c.origin}`, `service_account: ${c.serviceAccounts.deploy}`]) {
+      const values = [`SERVICE: ${c.service}`, `MIGRATE_JOB: ${c.migrateJob}`, `CLEANUP_JOB: ${c.cleanupJob}`, `ORIGIN: ${c.origin}`, `service_account: ${c.serviceAccounts.deploy}`];
+      for (const value of values) {
         assert.ok(jobBody(env).includes(value), value);
       }
     });
 
     // マイグレーションが失敗したら新しいイメージは出さない（0036）。出したら 100% がそのイメージか確かめる
-    it(`${env} はマイグレーション → 出す → 100% の確かめ → /api/health の順で、--image は $DIGEST_IMAGE`, () => {
+    // 削除のジョブのイメージは、マイグレーションの後で差し替える（新しい表の形を前提にしたジョブが古い表で流れない）
+    it(`${env} はマイグレーション → 削除のジョブ → 出す → 100% の確かめ → /api/health の順で、--image は $DIGEST_IMAGE`, () => {
       const body = jobBody(env);
-      const order = ["Migrate the", "Deploy to", "Check that the new image serves 100%", "Check /api/health"].map((name) => stepIndex(body, name));
+      const steps = ["Migrate the", "Update the cleanup job image", "Deploy to", "Check that the new image serves 100%", "Check /api/health"];
+      const order = steps.map((name) => stepIndex(body, name));
       assert.deepEqual(order, order.toSorted((a, b) => a - b));
       for (const line of body.split("\n").filter((l) => /gcloud run (deploy|jobs update)/.test(l))) assert.match(line, /--image "\$DIGEST_IMAGE"/);
     });

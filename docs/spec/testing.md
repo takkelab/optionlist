@@ -41,7 +41,8 @@
   - すべてのデータを消す: 行と写真のファイルが消え、Cookie が消えること。アカウントがなくても 204 になること
   - セキュリティ（docs/decisions/0038）: `Origin` が違う書き込みが 403 になること。`Content-Type` が JSON でない JSON の API が 400 になること。`/api/metrics` がトークンなし・違うトークンで 404 になること。`APP_ENV=production` で `/api/health/db` が `message` を返さないこと。500 の `message` に内部の情報が出ないこと
   - 写真（docs/decisions/0037）: 位置情報の入った JPEG を送ると、保存されたファイルに EXIF が残っていないこと。長辺が 1280px に縮み、JPEG で保存されること。先頭だけ JPEG の読めないファイルが 400 になること。写真の配信に `Cache-Control: private`・`Vary: Cookie`・CSP・`Content-Disposition: inline` が付くこと。1 人あたりの上限で 429 `PHOTO_LIMIT_REACHED` になり、置き換えは上限でも通ること。保存の回数の制限で 429 と `Retry-After` になること
-  - 写真の置き場所（`tests/api/photo-files-contract.test.ts`）: `LocalPhotoFiles` と `GcsPhotoFiles` を同じテストで確かめる（保存して同じ中身が読める、名前がサーバーの UUID、消したら読めない、ない名前を読むと null で消しても失敗しない）。`GcsPhotoFiles` は fake-gcs-server につなぎ、API 越しの保存と配信も確かめる。手元で `GCS_EMULATOR_URL` がなければ GCS の分を飛ばし、CI では飛ばさずに失敗にする（docs/decisions/0051）
+  - 写真の置き場所（`tests/api/photo-files-contract.test.ts`）: `LocalPhotoFiles` と `GcsPhotoFiles` を同じテストで確かめる（保存して同じ中身が読める、名前がサーバーの UUID、消したら読めない、ない名前を読むと null で消しても失敗しない、置いた時刻より後の境目を渡したときだけ「古いファイル」に出る）。`GcsPhotoFiles` は fake-gcs-server につなぎ、API 越しの保存と配信も確かめる。手元で `GCS_EMULATOR_URL` がなければ GCS の分を飛ばし、CI では飛ばさずに失敗にする（docs/decisions/0051）
+  - 削除のジョブ（`tests/api/cleanup-job.test.ts`。data.md §5）: 本番と同じ `ol_cleanup`（`CLEANUP_DATABASE_URL`）でつなぐ。時計はフェイクで、5 年・30 日・90 日・7 日・行のない写真の 1 日のそれぞれで、境目の 1 秒前（古い側）が消え、ちょうどと 1 秒後が残ること。30 日を過ぎても項目か達成がある人は残ること。消した人の項目・達成・写真のファイルが消え、ほかの人の行と写真が残ること。写真のファイルを消せなくても行は消えてジョブは成功し、`orphan_file_error` が出ること。`cleanup_result` の件数が合い、ID・ファイル名が出ないこと
   - テストで送る写真は本物の画像にする（`tests/fakes/TestImages.ts`。sharp で作り直すので、先頭のバイトだけの偽物は 400 になる）
 
 ## 3. 統合テスト（性能）
@@ -88,7 +89,7 @@ push と PR ごとに次を実行する。どれかが失敗したら PR はマ�
 5. 性能の統合テスト（metrics.md §4）
 6. frontend のビルドと JS サイズの計測
 7. E2E テスト（LCP・タップ領域を含む）
-8. 本番用のイメージ（`Dockerfile`）を作り、Postgres のサービスコンテナにつないで起動して、スモークテストをする（`image` ジョブ。`npm run smoke:image -- <イメージ>`〈`scripts/smoke-image.ts`〉。`APP_ENV=production` と `PUBLIC_INDEXING=true` の 2 回起動する。metrics.md §2。docs/decisions/0054）
+8. 本番用のイメージ（`Dockerfile`）を作り、Postgres のサービスコンテナにつないで起動して、スモークテストをする（`image` ジョブ。`npm run smoke:image -- <イメージ>`〈`scripts/smoke-image.ts`〉。`APP_ENV=production` と `PUBLIC_INDEXING=true` の 2 回起動する。その前に、マイグレーションの Job と同じ `dbmate migrate` と、削除のジョブと同じ `node --import tsx --max-semi-space-size=4 src/jobs/cleanup.ts`〈`PHOTO_BUCKET`・`APP_ENV` を渡さず、`ol_cleanup` でつなぎ、`cleanup_result` を出して終了コード 0〉をイメージの中で流す。metrics.md §2。docs/decisions/0054・0059）
 9. PR の検査（process.md の「詰まった点と再発防止策」欄、目標値を変えたときの decisions の有無）
 10. 結果をジョブサマリーと `metrics-report.json` に出す
 

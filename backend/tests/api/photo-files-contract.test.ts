@@ -59,6 +59,16 @@ describe.each(implementations)("%s", (_name, files) => {
     expect(await files.read(name)).toBeNull();
   });
 
+  // 削除のジョブが「置いてから 1 日たったファイル」を探すのに使う（data.md §5）。置いた時刻は変えられないので、境目の側を動かす
+  it("lists a file only when it was saved before the cutoff", async () => {
+    const name = await files.save(JPEG);
+    const minute = 60 * 1000;
+    expect(await files.listOlderThan(new Date(Date.now() + minute))).toContain(name);
+    expect(await files.listOlderThan(new Date(Date.now() - minute))).not.toContain(name);
+    await files.remove(name);
+    expect(await files.listOlderThan(new Date(Date.now() + minute))).not.toContain(name);
+  });
+
   it("reads null for a name that does not exist, and removing it does not fail", async () => {
     expect(await files.read("00000000-0000-0000-0000-000000000000.jpg")).toBeNull();
     await expect(files.remove("00000000-0000-0000-0000-000000000000.jpg")).resolves.toBeUndefined();

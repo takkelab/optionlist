@@ -37,7 +37,7 @@
 | L2 | 関数の行数上限 | 40 行以内 ※仮決め | React コンポーネント（`.tsx` の関数）は 80 行以内。テストファイル（`*.test.ts(x)`、e2e の `*.spec.ts`）は対象外（`describe` の中身はケースの並びで長くなるため）。フェイクは対象 |
 | L3 | 影響範囲の広いモックの禁止 | `vi.mock` / `vi.doMock` / `vi.stubGlobal` / モジュールや組み込みオブジェクト（ファイル内で宣言していない名前）への `vi.spyOn`、E2E での `page.route`（`routeFromHAR`・`routeWebSocket` を含む）を禁止。依存はコンストラクタで受け取り、テストではインタフェースを実装したフェイクを渡す | なし |
 | L4 | デメテルの法則 | 「先の先」をたどらない。`this.repo.find()`（自分のフィールドのメソッド）や `option.title` はよいが、`a.b.c` / `a.b.c()` のように 2 段以上たどるのは禁止。段数は根元から数え、`this` と自分のフィールド（`this.x`・`this.#x`）は 0 段目、呼び出しの戻り値に続くアクセスも 1 段に数える（`a.b().c`・`(await a.b()).c` は違反）。型情報は使わず名前で判定する | 戻り値に続くメンバーのうち、許可リストにあるもの（配列・文字列・Promise のメソッドと `length`、Express の `res.status().json()`）。`process.env.X`、`import.meta.env.X`、名前空間 import の `ns.x`、Vitest の `expect(x).not` / `resolves` / `rejects`。許可リストは `tools/lint-rules/rules/law-of-demeter.ts` |
-| L5 | トップレベル関数の禁止 | `function` 宣言も、トップレベルの変数に入れたアロー関数（オブジェクトの値や `asyncHandler(…)`・`Router().get(…)` のような呼び出しの引数に入れたものを含む。`items.map(…)` など配列・Promise のメソッドに渡すものは除く）も禁止。宣言以外のトップレベルの文（`router.get(…)` など）も禁止。処理はクラスのメソッドに書く | frontend の React コンポーネント（大文字で始まる、`.tsx` 内）とフック（`useXxx`）。エントリーポイント（`server.ts`、`main.tsx`、`backend/src/jobs/*.ts`）とテストのトップレベルの文（テストでも関数は禁止。使い回す処理はフェイクのクラスにする） |
+| L5 | トップレベル関数の禁止 | `function` 宣言も、トップレベルの変数に入れたアロー関数（オブジェクトの値や `asyncHandler(…)`・`Router().get(…)` のような呼び出しの引数に入れたものを含む。`items.map(…)` など配列・Promise のメソッドに渡すものは除く）も禁止。宣言以外のトップレベルの文（`router.get(…)` など）も禁止。処理はクラスのメソッドに書く | frontend の React コンポーネント（大文字で始まる、`.tsx` 内）とフック（`useXxx`）。エントリーポイント（`server.ts`、`main.tsx`、`backend/src/jobs/cleanup.ts`）とテストのトップレベルの文（テストでも関数は禁止。使い回す処理はフェイクのクラスにする） |
 | L6 | インタフェースのないクラスの禁止 | すべてのクラスは `implements` で 1 つ以上のインタフェースを実装する | `Error` を継承したエラークラス |
 | L7 | static の禁止 | `static` のメソッド・プロパティ・ブロックを禁止。モジュールのトップレベルの `let`（実質的な static 変数）も禁止 | なし |
 | L8 | パブリック変数の禁止 | クラスのプロパティは `private`（または `#`）のみ。外から値を読む必要があればメソッドで返す。`export let` も禁止 | なし |
@@ -85,7 +85,7 @@ optionlist-web/
 │   ├── src/
 │   │   ├── server.ts         # エントリーポイント。DB の接続などを作って AppAssembly に渡し、listen する
 │   │   ├── AppAssembly.ts    # controllers・services・repositories を new して注入する（テストの TestApp も同じものを使うので、分離テストが集めるルートは本番と同じ）
-│   │   ├── jobs/             # Cloud Run Job のエントリーポイント（削除のジョブ cleanup.ts、エラーの件数の集計。data.md §5）
+│   │   ├── jobs/             # Cloud Run Job。削除のジョブのエントリーポイント cleanup.ts と、その処理（CleanupJob）・SQL（CleanupRepository。ol_cleanup で全員の行を扱うので repositories/ に置かない。§2 の L13）。data.md §5
 │   │   ├── app.ts            # Express の設定（クラス。supertest はこれを使う）
 │   │   ├── controllers/      # ルーティング・入力検証・レスポンス
 │   │   ├── services/         # 処理（並び順、完了、提案の関連の順番、アカウントと復旧コード、メモリで数える回数の制限など）
@@ -143,6 +143,7 @@ optionlist-web/
 - 共用の Cloud SQL は `takkelab-pg`（PostgreSQL 17、Enterprise の db-f1-micro）。Cloud Run からは Unix ソケット（`--add-cloudsql-instances`）でつなぎ、手元（`infra:setup`・`infra:check`）からは Cloud SQL Auth Proxy でつなぐ。承認済みのネットワークは置かず、暗号化した接続だけを受け付ける。DB のログイン用のロールは環境ごとに分ける（data.md §4。docs/decisions/0056）
 - アクセスのログ（Cloud Run のリクエストのログ）は、`_Default` のシンクの行き先を東京（asia-northeast1）のログのバケットにして、国内に置く（docs/decisions/0052・0057）
 - Cloud Run のサービスアカウントは環境ごとに分け、自分の環境の入れ物・秘密の値・Cloud SQL の接続だけを許す
+- 削除のジョブ（data.md §5）は Cloud Run Job `optionlist-<env>-cleanup`（本番用のイメージで `node --import tsx --max-semi-space-size=4 src/jobs/cleanup.ts`、流し直さない、時間の制限 1 時間。`APP_ENV`・`PHOTO_BUCKET` を渡し、`APP_ENV` が staging・production で `PHOTO_BUCKET` がなければ止まる）。サービスアカウント `optionlist-<env>-cleanup` は、Cloud SQL の接続・写真の入れ物・`CLEANUP_DATABASE_URL` の秘密の値だけを持つ。Cloud Scheduler `optionlist-<env>-cleanup-daily` が毎日 4 時（Asia/Tokyo）に Cloud Run の API（`jobs/…:run`）を呼んで起動する。名乗るサービスアカウント `optionlist-<env>-sched` は、その Job の `run.invoker` だけを持つ。Job のイメージは、`deploy.yml` がマイグレーションの後に差し替える。`infra:check` は Job の設定・IAM と Scheduler（ENABLED、毎日 4 時）も確かめる
 - 環境の設定は `infra/` の gcloud のスクリプト（`npm run infra:setup -- <apis|instance|shared|db <env>|env <env>>`。何度流しても同じ結果になる。名前と値は `infra/config.ts`）で作り、`npm run infra:check -- <instance|staging|production>` で決めたとおりかを確かめる。`instance` は共用の Cloud SQL のインスタンス（地域、削除保護、自動バックアップと時点復旧、インスタンスを消してもバックアップを残す設定。バックアップはインスタンス全体が単位なので、環境ごとではなくここで見る。data.md §6）。`staging`・`production` はその環境（Cloud Run の台数〈サービスの単位とリビジョンの単位の両方〉、入れ物の公開アクセスの防止と soft delete〈soft delete は R10 から〉、秘密の値の置き場所、サービスアカウントの権限、DB の持ち主と CONNECT、デプロイ用のサービスアカウントの Workload Identity Federation の条件と、本番のデプロイ用のサービスアカウントの確認用への権限が読み取りだけであること、ロールに BYPASSRLS がないこと、予算のアラート〈R10 から〉）。`staging`・`production` では、`GITHUB_TOKEN` の既定の権限が `read` で、main の `.github/workflows/` に `actions: write`・`write-all` がないことも確かめる（docs/decisions/0055）。`instance` では、あわせてアクセスのログの行き先（東京のバケット）と、管理用のパスワードの秘密の値に誰の権限も付いていないことを確かめる（docs/decisions/0057）
 
 ### 4.2 環境変数と秘密の値

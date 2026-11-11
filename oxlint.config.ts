@@ -70,7 +70,7 @@ export default defineConfig({
     { files: ["frontend/**/*.test.ts", "frontend/**/*.test.tsx"], rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true, allowHooks: true }) } },
     // L5 の例外: エントリーポイントのトップレベルの文
     {
-      files: ["backend/src/server.ts", "backend/db/perf-data/generate.ts", "backend/db/roles/setup-roles.ts"],
+      files: ["backend/src/server.ts", "backend/src/jobs/cleanup.ts", "backend/db/perf-data/generate.ts", "backend/db/roles/setup-roles.ts"],
       rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true }) },
     },
     { files: ["frontend/src/main.tsx"], rules: { "design/no-top-level-function": l5({ allowTopLevelStatements: true, allowHooks: true }) } },

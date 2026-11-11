@@ -48,6 +48,7 @@ jobs:
     env:
       SERVICE: optionlist-staging
       MIGRATE_JOB: optionlist-staging-migrate
+      CLEANUP_JOB: optionlist-staging-cleanup
       ORIGIN: https://optionlist-staging-55327626788.asia-northeast1.run.app
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +69,9 @@ jobs:
         run: |
           gcloud run jobs update "$MIGRATE_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
           gcloud run jobs execute "$MIGRATE_JOB" --region "$REGION" --project "$PROJECT_ID" --wait
+      - name: Update the cleanup job image
+        run: |
+          gcloud run jobs update "$CLEANUP_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
       - name: Deploy to staging
         run: |
           gcloud run deploy "$SERVICE" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
@@ -93,6 +97,7 @@ jobs:
       STAGING_SERVICE: optionlist-staging
       SERVICE: optionlist-production
       MIGRATE_JOB: optionlist-production-migrate
+      CLEANUP_JOB: optionlist-production-cleanup
       ORIGIN: https://optionlist-production-55327626788.asia-northeast1.run.app
     steps:
       - uses: google-github-actions/auth@v2
@@ -115,6 +120,9 @@ jobs:
         run: |
           gcloud run jobs update "$MIGRATE_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
           gcloud run jobs execute "$MIGRATE_JOB" --region "$REGION" --project "$PROJECT_ID" --wait
+      - name: Update the cleanup job image
+        run: |
+          gcloud run jobs update "$CLEANUP_JOB" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet
       - name: Deploy to production
         run: |
           gcloud run deploy "$SERVICE" --image "$DIGEST_IMAGE" --region "$REGION" --project "$PROJECT_ID" --quiet

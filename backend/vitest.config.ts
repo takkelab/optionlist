@@ -19,7 +19,8 @@ export default defineConfig({
       reportOnFailure: true,
       include: ["src/**/*.ts"],
       // listen するだけのエントリーポイント。依存の組み立ては 1c 以降も server.ts に置く
-      exclude: ["src/server.ts"],
+      // 削除のジョブのエントリーポイント（jobs/cleanup.ts）も同じ。中身の CleanupEntry・CleanupJob・CleanupRepository はテストする
+      exclude: ["src/server.ts", "src/jobs/cleanup.ts"],
     },
   },
 });

@@ -1,17 +1,17 @@
-// npm run infra:setup -- <手順> [--dry-run]。確認用・本番の環境を gcloud で作る（process.md §5 の R8。architecture.md §4.1）
+// npm run infra:setup -- <手順> [--dry-run]。確認用・本番の環境を gcloud で作る（process.md §5 の R8・R9。architecture.md §4.1）
 // どの手順も何度流しても同じ結果になる（あるものは作らず、設定を決めた値にそろえる）。--dry-run は流すコマンドを表示するだけ
 // 手順（この順に流す）:
 //   apis                 使う API を有効にする
 //   instance             共用の Cloud SQL のインスタンスと、管理用のユーザー（postgres）のパスワード
 //   shared               Artifact Registry、GitHub からの Workload Identity Federation、アクセスのログのバケット
 //   db <staging|production>   DB とロール（db:roles:cloud を Cloud SQL Auth Proxy 越しに流す）と、接続先の URL の秘密の値
-//   env <staging|production>  サービスアカウント、写真の入れ物、秘密の値、Cloud Run のサービスとマイグレーションの Job、権限
+//   env <staging|production>  サービスアカウント、写真の入れ物、秘密の値、Cloud Run のサービス・Job、Scheduler、権限
 // 秘密の値は画面に出さない（Secret Manager には標準入力で渡す）
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
-  ARTIFACT_REPOSITORY, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID, PROVIDER_CONDITION, PROVIDER_MAPPING,
-  REGION, SERVICES, deployPrincipal, envConfig, passwordOf, socketDatabaseUrl,
+  ARTIFACT_REPOSITORY, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID,
+  PROVIDER_CONDITION, PROVIDER_MAPPING, REGION, SERVICES, cleanupRunUri, deployPrincipal, envConfig, passwordOf, socketDatabaseUrl,
 } from "./config.ts";
 import type { EnvName } from "./config.ts";
 import { CliGcloud } from "./lib/gcloud.ts";
@@ -24,6 +24,7 @@ const [step, envArg] = args.filter((a) => a !== "--dry-run");
 const gcloud: Gcloud = new CliGcloud(dryRun);
 const P = { project: PROJECT_ID };
 const R = { ...P, region: REGION };
+const L = { ...P, location: REGION };
 
 const newSecretValue = (): string => randomBytes(32).toString("base64url");
 const exists = (cmd: string[], flags: Record<string, string> = P): boolean => gcloud.read(cmd, flags).ok;
@@ -99,6 +100,7 @@ const db = async (env: EnvName): Promise<void> => {
   // パスワードは接続先の URL（Cloud Run から読む Unix ソケットの形）ごと Secret Manager に置く。2 回目からはそこから読む
   ensureSecret(c.secrets.databaseUrl, () => socketDatabaseUrl(c.roles.migrator, newSecretValue(), c.database));
   ensureSecret(c.secrets.appDatabaseUrl, () => socketDatabaseUrl(c.roles.app, newSecretValue(), c.database));
+  ensureSecret(c.secrets.cleanupDatabaseUrl, () => socketDatabaseUrl(c.roles.cleanup, newSecretValue(), c.database));
   if (dryRun) {
     console.log(`▶ Cloud SQL Auth Proxy を起動し、npm --prefix backend run db:roles:cloud -- --env ${env}`);
     return;
@@ -108,6 +110,7 @@ const db = async (env: EnvName): Promise<void> => {
     const admin = readSecret(gcloud, INSTANCE.adminPasswordSecret);
     const migrator = passwordOf(readSecret(gcloud, c.secrets.databaseUrl));
     const app = passwordOf(readSecret(gcloud, c.secrets.appDatabaseUrl));
+    const cleanup = passwordOf(readSecret(gcloud, c.secrets.cleanupDatabaseUrl));
     console.log(`▶ npm --prefix backend run db:roles:cloud -- --env ${env}（Proxy 越し）`);
     // 手元のシェルに残った接続先（CLEANUP_DATABASE_URL など）を RoleSetup に読ませない
     const { CLEANUP_DATABASE_URL: _cleanup, METRICS_DATABASE_URL: _metrics, ...inherited } = process.env;
@@ -119,6 +122,7 @@ const db = async (env: EnvName): Promise<void> => {
         ADMIN_DATABASE_URL: proxy.url("postgres", admin, "postgres"),
         DATABASE_URL: proxy.url(c.roles.migrator, migrator, c.database),
         APP_DATABASE_URL: proxy.url(c.roles.app, app, c.database),
+        CLEANUP_DATABASE_URL: proxy.url(c.roles.cleanup, cleanup, c.database),
       },
     });
     if (result.status !== 0) throw new Error("db:roles:cloud が失敗した");
@@ -135,9 +139,9 @@ const env = (name: EnvName): void => {
       gcloud.change(["iam", "service-accounts", "create", id], { ...P, "display-name": `optionlist ${name} ${key}` });
     }
   }
-  const { run, migrate, deploy } = c.serviceAccounts;
+  const { run, migrate, cleanup, scheduler, deploy } = c.serviceAccounts;
   // Cloud SQL へつなぐ権限（インスタンスの単位では付けられない。DB に入れるかはロールのパスワードで分ける。docs/decisions/0056）
-  for (const member of [run, migrate]) {
+  for (const member of [run, migrate, cleanup]) {
     gcloud.change(["projects", "add-iam-policy-binding", PROJECT_ID], { member: `serviceAccount:${member}`, role: "roles/cloudsql.client", condition: "None" });
   }
 
@@ -145,7 +149,9 @@ const env = (name: EnvName): void => {
   if (!exists(["storage", "buckets", "describe", `gs://${c.bucket}`])) {
     gcloud.change(["storage", "buckets", "create", `gs://${c.bucket}`], { ...P, location: REGION, "uniform-bucket-level-access": true, "public-access-prevention": true });
   }
-  gcloud.change(["storage", "buckets", "add-iam-policy-binding", `gs://${c.bucket}`], { member: `serviceAccount:${run}`, role: "roles/storage.objectAdmin" });
+  for (const member of [run, cleanup]) {
+    gcloud.change(["storage", "buckets", "add-iam-policy-binding", `gs://${c.bucket}`], { member: `serviceAccount:${member}`, role: "roles/storage.objectAdmin" });
+  }
 
   ensureSecret(c.secrets.metricsToken, newSecretValue);
   ensureSecret(c.secrets.ipHashSecret, newSecretValue);
@@ -153,6 +159,7 @@ const env = (name: EnvName): void => {
     gcloud.change(["secrets", "add-iam-policy-binding", secret], { ...P, member: `serviceAccount:${run}`, role: "roles/secretmanager.secretAccessor" });
   }
   gcloud.change(["secrets", "add-iam-policy-binding", c.secrets.databaseUrl], { ...P, member: `serviceAccount:${migrate}`, role: "roles/secretmanager.secretAccessor" });
+  gcloud.change(["secrets", "add-iam-policy-binding", c.secrets.cleanupDatabaseUrl], { ...P, member: `serviceAccount:${cleanup}`, role: "roles/secretmanager.secretAccessor" });
 
   // サービスと Job は、最初は Google のサンプルのイメージで作る。イメージは deploy.yml が差し替える（設定はここで決める）
   const serviceFlags = {
@@ -187,10 +194,39 @@ const env = (name: EnvName): void => {
   if (exists(["run", "jobs", "describe", c.migrateJob], R)) gcloud.change(["run", "jobs", "update", c.migrateJob], jobFlags);
   else gcloud.change(["run", "jobs", "create", c.migrateJob], { ...jobFlags, image: "us-docker.pkg.dev/cloudrun/container/job:latest" });
 
+  // 削除のジョブ（data.md §5）。ol_cleanup_<env> でつなぎ、写真の入れ物を見る。失敗しても自動で流し直さない（次の日に流れる）
+  const cleanupJobFlags = {
+    ...R,
+    "service-account": cleanup,
+    "set-cloudsql-instances": INSTANCE_CONNECTION,
+    "update-secrets": `CLEANUP_DATABASE_URL=${c.secrets.cleanupDatabaseUrl}:latest`,
+    "update-env-vars": `APP_ENV=${name},PHOTO_BUCKET=${c.bucket}`,
+    command: "node",
+    args: CLEANUP_JOB_ARGS.join(","),
+    "max-retries": 0,
+    "task-timeout": `${CLEANUP_JOB_TIMEOUT_SECONDS}s`,
+  };
+  if (exists(["run", "jobs", "describe", c.cleanupJob], R)) gcloud.change(["run", "jobs", "update", c.cleanupJob], cleanupJobFlags);
+  else gcloud.change(["run", "jobs", "create", c.cleanupJob], { ...cleanupJobFlags, image: "us-docker.pkg.dev/cloudrun/container/job:latest" });
+
+  // Cloud Scheduler が毎日 4 時（日本時間）に、Cloud Run の API で削除のジョブを起動する。名乗るのは Job の run.invoker だけを持つサービスアカウント
+  const schedulerFlags = {
+    ...L,
+    schedule: CLEANUP_SCHEDULE.cron,
+    "time-zone": CLEANUP_SCHEDULE.timeZone,
+    uri: cleanupRunUri(c),
+    "http-method": "POST",
+    "oauth-service-account-email": scheduler,
+  };
+  if (exists(["scheduler", "jobs", "describe", c.cleanupScheduler], L)) gcloud.change(["scheduler", "jobs", "update", "http", c.cleanupScheduler], schedulerFlags);
+  else gcloud.change(["scheduler", "jobs", "create", "http", c.cleanupScheduler], schedulerFlags);
+
   // デプロイ用のサービスアカウント（docs/decisions/0055）。自分の環境のサービスと Job を変え、実行用のサービスアカウントとして動かせる
   gcloud.change(["run", "services", "add-iam-policy-binding", c.service], { ...R, member: `serviceAccount:${deploy}`, role: "roles/run.developer" });
   gcloud.change(["run", "jobs", "add-iam-policy-binding", c.migrateJob], { ...R, member: `serviceAccount:${deploy}`, role: "roles/run.developer" });
-  for (const member of [run, migrate]) {
+  gcloud.change(["run", "jobs", "add-iam-policy-binding", c.cleanupJob], { ...R, member: `serviceAccount:${deploy}`, role: "roles/run.developer" });
+  gcloud.change(["run", "jobs", "add-iam-policy-binding", c.cleanupJob], { ...R, member: `serviceAccount:${scheduler}`, role: "roles/run.invoker" });
+  for (const member of [run, migrate, cleanup]) {
     gcloud.change(["iam", "service-accounts", "add-iam-policy-binding", member], { ...P, member: `serviceAccount:${deploy}`, role: "roles/iam.serviceAccountUser" });
   }
   // 確認用は push で作ったイメージを置き、本番は確認用のイメージを読むだけ

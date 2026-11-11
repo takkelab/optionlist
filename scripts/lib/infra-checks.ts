@@ -1,7 +1,8 @@
 // infra:check の判定（architecture.md §4.1、process.md §5 の R8。docs/decisions/0055・0056・0057）
 // 読むのは scripts/infra-check.ts（gcloud・gh・Cloud SQL Auth Proxy）。ここは読んだものを受け取って、違っているところを 1 行ずつ返す（空なら合格）
 import {
-  GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID, PROJECT_NUMBER, PROVIDER_CONDITION, PROVIDER_MAPPING, REGION, deployPrincipal, envConfig,
+  CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID, PROJECT_NUMBER, PROVIDER_CONDITION,
+  PROVIDER_MAPPING, REGION, cleanupRunUri, deployPrincipal, envConfig,
 } from "../../infra/config.ts";
 import type { EnvName } from "../../infra/config.ts";
 
@@ -26,15 +27,15 @@ export const policyProblems = (label: string, policy: Policy, expected: Grant[],
 
 // プロジェクトの単位のポリシーは、この環境のサービスアカウントの分だけを見る（ほかのアプリや自分のアカウントの分は見ない）
 export const projectPolicyProblems = (env: EnvName, policy: Policy): string[] => {
-  const { run, migrate, deploy } = envConfig(env).serviceAccounts;
-  const mine = new Set([run, migrate, deploy].map((e) => `serviceAccount:${e}`));
+  const { run, migrate, cleanup, scheduler, deploy } = envConfig(env).serviceAccounts;
+  const mine = new Set([run, migrate, cleanup, scheduler, deploy].map((e) => `serviceAccount:${e}`));
   // GitHub からの principal・principalSet にプロジェクトの単位で権限を付けると、サービスアカウントごとの条件を素通りする（docs/decisions/0055）
   const pool = `//iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${GITHUB.pool}`;
   const federated = (member: string) => member.startsWith(`principal:${pool}`) || member.startsWith(`principalSet:${pool}`);
   return policyProblems(
     `プロジェクト（${env} のサービスアカウントと GitHub からの principal）`,
     policy,
-    [["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`]],
+    [["roles/cloudsql.client", `serviceAccount:${run}`], ["roles/cloudsql.client", `serviceAccount:${migrate}`], ["roles/cloudsql.client", `serviceAccount:${cleanup}`]],
     (member) => !mine.has(member) && !federated(member),
   );
 };
@@ -96,6 +97,46 @@ export const instanceProblems = (instance: SqlInstance | null): string[] => {
   return problems;
 };
 
+export const cleanupJobProblems = (env: EnvName, job: RunJob | null): string[] => {
+  const c = envConfig(env);
+  if (job === null) return [`Cloud Run の Job ${c.cleanupJob} がない`];
+  const task = job.spec?.template?.spec?.template?.spec ?? {};
+  const container = task.containers?.[0];
+  const vars = envMap(container);
+  const problems: string[] = [];
+  const expect = (ok: boolean, message: string) => {
+    if (!ok) problems.push(`${c.cleanupJob}: ${message}`);
+  };
+  expect(job.metadata?.labels?.["cloud.googleapis.com/location"] === REGION, `地域が ${REGION} でない`);
+  expect(task.serviceAccountName === c.serviceAccounts.cleanup, `サービスアカウントが ${c.serviceAccounts.cleanup} でない`);
+  expect(job.spec?.template?.metadata?.annotations?.["run.googleapis.com/cloudsql-instances"] === INSTANCE_CONNECTION, "共用の Cloud SQL につないでいない");
+  expect(vars.get("CLEANUP_DATABASE_URL") === `secret:${c.secrets.cleanupDatabaseUrl}`, `CLEANUP_DATABASE_URL が秘密の値 ${c.secrets.cleanupDatabaseUrl} でない`);
+  expect(vars.get("PHOTO_BUCKET") === c.bucket, `PHOTO_BUCKET が ${c.bucket} でない`);
+  // APP_ENV がないと、PHOTO_BUCKET が抜けたときに止まらない（docs/decisions/0059）
+  expect(vars.get("APP_ENV") === env, `APP_ENV が ${env} でない`);
+  expect([...(container?.command ?? []), ...(container?.args ?? [])].join(" ") === ["node", ...CLEANUP_JOB_ARGS].join(" "), "コマンドが削除のジョブでない");
+  expect(task.maxRetries === 0, "失敗した削除のジョブを自動で流し直す設定になっている");
+  expect(Number(task.timeoutSeconds) === CLEANUP_JOB_TIMEOUT_SECONDS, `時間の制限が ${CLEANUP_JOB_TIMEOUT_SECONDS} 秒でない（${task.timeoutSeconds}）`);
+  return problems;
+};
+
+export const schedulerProblems = (env: EnvName, scheduler: SchedulerJob | null): string[] => {
+  const c = envConfig(env);
+  if (scheduler === null) return [`Cloud Scheduler ${c.cleanupScheduler} がない`];
+  const target = scheduler.httpTarget ?? {};
+  const expectedUri = cleanupRunUri(c);
+  const problems: string[] = [];
+  if (scheduler.state !== "ENABLED") problems.push(`${c.cleanupScheduler}: 状態が ENABLED でない（${scheduler.state}）`);
+  if (scheduler.schedule !== CLEANUP_SCHEDULE.cron) problems.push(`${c.cleanupScheduler}: 実行時刻が毎日 4 時でない（${scheduler.schedule}）`);
+  if (scheduler.timeZone !== CLEANUP_SCHEDULE.timeZone) problems.push(`${c.cleanupScheduler}: タイムゾーンが Asia/Tokyo でない（${scheduler.timeZone}）`);
+  if (target.uri !== expectedUri) problems.push(`${c.cleanupScheduler}: Cloud Run Job の URI が違う（${target.uri}）`);
+  if (target.httpMethod !== "POST") problems.push(`${c.cleanupScheduler}: HTTP メソッドが POST でない（${target.httpMethod}）`);
+  if (target.oauthToken?.serviceAccountEmail !== c.serviceAccounts.scheduler) {
+    problems.push(`${c.cleanupScheduler}: 呼び出し用サービスアカウントが ${c.serviceAccounts.scheduler} でない`);
+  }
+  return problems;
+};
+
 type EnvVar = { name: string; value?: string; valueFrom?: { secretKeyRef?: { name: string; key: string } } };
 type Container = { env?: EnvVar[]; command?: string[]; args?: string[] };
 type RevisionTemplate = {
@@ -108,7 +149,14 @@ export type RunService = {
 };
 export type RunJob = {
   metadata?: { labels?: Record<string, string> };
-  spec?: { template?: { metadata?: { annotations?: Record<string, string> }; spec?: { template?: { spec?: { serviceAccountName?: string; containers?: Container[]; maxRetries?: number } } } } };
+  spec?: { template?: { metadata?: { annotations?: Record<string, string> }; spec?: { template?: { spec?: { serviceAccountName?: string; containers?: Container[]; maxRetries?: number; timeoutSeconds?: number | string } } } } };
+};
+
+export type SchedulerJob = {
+  state?: string;
+  schedule?: string;
+  timeZone?: string;
+  httpTarget?: { uri?: string; httpMethod?: string; oauthToken?: { serviceAccountEmail?: string } };
 };
 
 const envMap = (container: Container | undefined): Map<string, string> =>
@@ -219,7 +267,7 @@ export const githubProblems = (defaultPermissions: string | null, workflows: Wor
 export const expectedGrants = (env: EnvName) => {
   const c = envConfig(env);
   const sa = (email: string) => `serviceAccount:${email}`;
-  const { run, migrate, deploy } = c.serviceAccounts;
+  const { run, migrate, cleanup, scheduler, deploy } = c.serviceAccounts;
   const productionDeploy = sa(envConfig("production").serviceAccounts.deploy);
   return {
     service: [
@@ -228,16 +276,21 @@ export const expectedGrants = (env: EnvName) => {
       ...(env === "staging" ? [["roles/run.viewer", productionDeploy] as Grant] : []),
     ] as Grant[],
     job: [["roles/run.developer", sa(deploy)]] as Grant[],
-    bucket: [["roles/storage.objectAdmin", sa(run)]] as Grant[],
+    cleanupJob: [["roles/run.developer", sa(deploy)], ["roles/run.invoker", sa(scheduler)]] as Grant[],
+    bucket: [["roles/storage.objectAdmin", sa(run)], ["roles/storage.objectAdmin", sa(cleanup)]] as Grant[],
     secrets: [
       [c.secrets.appDatabaseUrl, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.metricsToken, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.ipHashSecret, [["roles/secretmanager.secretAccessor", sa(run)]]],
       [c.secrets.databaseUrl, [["roles/secretmanager.secretAccessor", sa(migrate)]]],
+      [c.secrets.cleanupDatabaseUrl, [["roles/secretmanager.secretAccessor", sa(cleanup)]]],
     ] as [string, Grant[]][],
     runtimeAccounts: [
       [run, [["roles/iam.serviceAccountUser", sa(deploy)]]],
       [migrate, [["roles/iam.serviceAccountUser", sa(deploy)]]],
+      [cleanup, [["roles/iam.serviceAccountUser", sa(deploy)]]],
+      // Cloud Scheduler が名乗る。デプロイ用にも名乗らせない（Job の run.invoker だけを持つ。data.md §5）
+      [scheduler, []],
       [deploy, [["roles/iam.workloadIdentityUser", deployPrincipal(env)]]],
     ] as [string, Grant[]][],
     // Artifact Registry は環境で共用。確認用が書き、本番は読むだけ
@@ -266,7 +319,7 @@ export const databaseProblems = (env: EnvName, facts: DatabaseFacts): string[] =
   // 持ち主は環境ごとの ol_owner_<env>。ol_migrator（両方の環境で同じロール）が持ち主だと、確認用から本番の DB の権限を変えられる（docs/decisions/0056）
   if (facts.owner !== c.roles.owner) problems.push(`${c.database}: 持ち主が ${c.roles.owner} でない（${facts.owner}）`);
   // CONNECT は、持ち主と、この環境のログイン用のロールと、管理用のユーザー（postgres。どのみち持ち主に SET ROLE できる）だけ
-  const allowed = new Set([c.roles.owner, "postgres", c.roles.migrator, c.roles.app, `ol_cleanup_${env}`, `ol_metrics_${env}`]);
+  const allowed = new Set([c.roles.owner, "postgres", c.roles.migrator, c.roles.app, c.roles.cleanup, `ol_metrics_${env}`]);
   for (const grantee of facts.connectGrantees) if (!allowed.has(grantee)) problems.push(`${c.database}: ${grantee} が CONNECT できる`);
   for (const role of facts.roles) {
     const envLogin = /^ol_[a-z]+_(staging|production)$/.test(role.name) && !role.name.startsWith("ol_owner_");
@@ -274,6 +327,6 @@ export const databaseProblems = (env: EnvName, facts: DatabaseFacts): string[] =
     if (!envLogin && role.login) problems.push(`${role.name}: グループのロールなのにログインできる（ログインは ${role.name}_<env> で行う）`);
     if (role.createdb) problems.push(`${role.name}: CREATEDB がある（確認用・本番では DB を作らない）`);
   }
-  for (const name of [c.roles.migrator, c.roles.app]) if (!facts.roles.some((r) => r.name === name)) problems.push(`${name} がない`);
+  for (const name of [c.roles.migrator, c.roles.app, c.roles.cleanup]) if (!facts.roles.some((r) => r.name === name)) problems.push(`${name} がない`);
   return problems;
 };

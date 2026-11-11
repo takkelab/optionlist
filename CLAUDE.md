@@ -10,11 +10,12 @@
 
 # Commands
 - 初回: `npm install` / `npm --prefix backend install` / `npm --prefix frontend install` / `npx playwright install chromium`（E2E のブラウザ）。PostgreSQL 17 は `winget install PostgreSQL.PostgreSQL.17`（superuser の `postgres` のパスワードを決める。`.env.example` は `postgres` の前提）
-- DB 作成: `backend/.env.example` を `backend/.env` にコピーし（`ADMIN_DATABASE_URL` は superuser の postgres、`DATABASE_URL` は ol_migrator、`APP_DATABASE_URL` は ol_app、`IP_HASH_SECRET`）、`npm --prefix backend run db:roles`（ロールと DB を作る。DB の持ち主が ol_migrator でなければ止まるので、消して作り直すなら `-- --recreate`）→ `npm --prefix backend run db:migrate`（`db/schema.sql` も書き出す）。`schema.sql` を psql に流し込む手順は使わない
+- DB 作成: `backend/.env.example` を `backend/.env` にコピーし（`ADMIN_DATABASE_URL` は superuser の postgres、`DATABASE_URL` は ol_migrator、`APP_DATABASE_URL` は ol_app、`CLEANUP_DATABASE_URL` は ol_cleanup、`IP_HASH_SECRET`）、`npm --prefix backend run db:roles`（ロールと DB を作る。DB の持ち主が ol_migrator でなければ止まるので、消して作り直すなら `-- --recreate`）→ `npm --prefix backend run db:migrate`（`db/schema.sql` も書き出す）。`schema.sql` を psql に流し込む手順は使わない
 - テスト用 DB: `backend/.env.test.example` を `backend/.env.test` にコピーして値を入れる。`npm test` が最初に `db:roles:test`（ロールとテスト用 DB）とマイグレーションを流す。`test:file` は流さないので、先に `npm --prefix backend run db:roles:test` と `db:migrate:test`
 - マイグレーションの追加: `npm --prefix backend run db:new -- <名前>` → `backend/db/migrations/` に up / down を書き、`tests/migrations/migrations.test.ts` を直す
 - 性能用データ: `npm --prefix backend run db:perf-data`（`.env.test` の DB に入れる。名前が `_test` で終わる DB 以外では止まる）
 - Backend 起動: `npm --prefix backend run dev`（http://localhost:8000）
+- 削除のジョブ（data.md §5）を手元で流す: `npm --prefix backend run cleanup`（`backend/.env` の `CLEANUP_DATABASE_URL`〈ol_cleanup〉でつなぐ。`.env.example` に足したので、前からある `.env`・`.env.test` には `CLEANUP_DATABASE_URL` を書き足して `db:roles`・`db:roles:test` を流し直す）。確認用で流すのは `gcloud run jobs execute optionlist-staging-cleanup --region asia-northeast1 --wait`
 - Frontend 起動: `npm --prefix frontend run dev`（http://localhost:5173、/api は backend にプロキシ）
 - スマホから触る: `npm --prefix frontend run dev:lan` で起動し、同じ Wi-Fi のスマホで表示された Network の URL（http://<PC の IP>:5173）を開く。初回は Windows のファイアウォールの許可が要る
 - 型チェック（backend・frontend・scripts・tools・e2e）: `npm run typecheck`

@@ -2,7 +2,8 @@ import type { PhotoFiles } from "../repositories/PhotoFiles";
 import type { OrphanFileMetrics } from "../metrics/AppMetrics";
 
 export interface PhotoRemover {
-  remove(filenames: string[]): Promise<void>;
+  // 消せたファイルの数を返す（削除のジョブが件数をログに出す。data.md §5）
+  remove(filenames: string[]): Promise<number>;
 }
 
 // 削除の失敗の出力先（server.ts では JsonLogger を渡す）。ファイル名・ID は message に入れない（docs/decisions/0042）
@@ -25,14 +26,17 @@ export class PhotoCleanup implements PhotoRemover {
     this.#log = log;
   }
 
-  async remove(filenames: string[]): Promise<void> {
+  async remove(filenames: string[]): Promise<number> {
+    let removed = 0;
     for (const filename of filenames) {
       try {
         await this.#files.remove(filename);
+        removed += 1;
       } catch (error) {
         this.#log.error({ kind: "orphan_file_error", message: "写真のファイルを消せなかった", error });
         this.#metrics.countOrphanFileError();
       }
     }
+    return removed;
   }
 }
