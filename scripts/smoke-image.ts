@@ -110,11 +110,12 @@ const cleanupOnce = (): boolean => {
 
 // 週 1 の書き出しの Job（data.md §6）が使う pg_dump が、イメージに入っていて PostgreSQL 17 の DB を書き出せることを確かめる
 // （版が古いと新しいサーバーを書き出せない）。ol_migrator（DATABASE_URL）で --enable-row-security を付け、捨てる。Cloud Storage にはつながない
+// /dev/null は fsync できないので --no-sync（Job は標準出力に流すので fsync しない）
 const dumpOnce = (): boolean => {
   const migratorUrl = new ContainerDatabaseUrl().rewrite(process.env.DATABASE_URL ?? "");
   const run = docker([
     "run", "--rm", "--add-host=host.docker.internal:host-gateway",
-    image, "pg_dump", "--format=custom", "--enable-row-security", "--file=/dev/null", `--dbname=${migratorUrl}`,
+    image, "pg_dump", "--format=custom", "--enable-row-security", "--no-sync", "--file=/dev/null", `--dbname=${migratorUrl}`,
   ]);
   if (run.status === 0) console.log("✅ pg_dump --enable-row-security（書き出しの Job が使う）");
   else console.error(`❌ pg_dump が終了コード ${run.status} で終わった\n${run.stdout}${run.stderr}`);
