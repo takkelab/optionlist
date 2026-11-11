@@ -65,7 +65,7 @@
 | [0032](0032-web-pwa-release.md) | 一般向けには Web＋PWA で出し、ストアは後で考える | 確定（ストアは公開後に決める） |
 | [0033](0033-anonymous-account.md) | ログイン画面を置かず、端末ごとの匿名アカウントと復旧コードにする | 確定 |
 | [0034](0034-postgres-rls.md) | MySQL から Postgres に移り、user_id での絞り込みと RLS を両方使う | 確定 |
-| [0035](0035-hosting-and-cost.md) | Cloud Run（東京）＋Cloud SQL（共用の 1 台）＋Cloud Storage に置き、月 3,000 円までに収める | 確定（費用は R8 で実額を確かめる） |
+| [0035](0035-hosting-and-cost.md) | Cloud Run（東京）＋Cloud SQL（共用の 1 台）＋Cloud Storage に置き、月 3,000 円までに収める | 確定（実額は 0058） |
 | [0036](0036-environments-and-deploy.md) | 環境を手元・CI・確認用・本番の 4 つに分け、本番は承認してから出す | 一部置き換え（本番の出し方は 0055） |
 | [0037](0037-private-photos.md) | 写真は非公開の入れ物に置き、backend が持ち主を確かめてから配る。backend でも作り直して EXIF を消す | 確定（上限の値は使って見直す） |
 | [0038](0038-security-baseline.md) | 公開に向けたセキュリティの土台（CSRF・CSP・回数の制限・metrics・連番 ID） | 確定（回数の制限の値は使って見直す） |
@@ -88,3 +88,4 @@
 | [0055](0055-production-deploy-by-dispatch.md) | 本番へは、GitHub の承認ではなく、自分で手で起動するワークフローで出す | 確定 |
 | [0056](0056-env-login-roles.md) | 共用の Cloud SQL では、環境ごとのログイン用のロールを作り、ol_* はグループのロールにする | 確定 |
 | [0057](0057-environment-details.md) | 確認用・本番の環境の細部（独自ドメインは R11 で、マイグレーションの Job、ログの置き場所、infra のスクリプト） | 確定 |
+| [0058](0058-actual-cost.md) | 実際の請求は 1 日 60 円ほど（月 1,800〜2,000 円）で、ほぼ Cloud SQL の固定の料金。月 3,000 円の上限は変えない | 確定（使った分の料金は公開後に見直す） |
