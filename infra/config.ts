@@ -67,8 +67,11 @@ export type EnvConfig = {
   bucket: string;
   database: string;
   maxInstances: number;
-  // Cloud Run が決める URL（https://<サービス>-<プロジェクト番号>.<地域>.run.app）。独自ドメインは R11 の前に決める（docs/decisions/0057）
+  // 独自ドメイン（Cloud Run のドメインマッピングでつなぐ。docs/decisions/0063）。origin（APP_ORIGIN）は https://<domain>
+  domain: string;
   origin: string;
+  // Cloud Run が決める URL（https://<サービス>-<プロジェクト番号>.<地域>.run.app）。残っているが、APP_ORIGIN と違うので書き込みは 403 になる
+  runUrl: string;
   // scheduler: Cloud Scheduler が削除のジョブを起動するときに名乗る（Job の run.invoker だけを持つ）
   serviceAccounts: { run: string; migrate: string; cleanup: string; scheduler: string; deploy: string };
   // metricsDatabaseUrl: npm run metrics:usage -- --env <env> が手元で読む（Cloud Run からは使わないので、誰にも読む権限を付けない）
@@ -79,6 +82,13 @@ export type EnvConfig = {
 
 const sa = (id: string) => `${id}@${PROJECT_ID}.iam.gserviceaccount.com`;
 
+// 2026-11-14 に取得（DNS は Cloudflare。プロキシはオフ。docs/decisions/0063）。本番は apex、確認用は staging. のサブドメイン
+export const DOMAIN = "optionlist.app";
+const domainOf = (env: EnvName): string => (env === "production" ? DOMAIN : `staging.${DOMAIN}`);
+
+// ドメインマッピングの API（gcloud では beta にしかないので REST で扱う。docs/decisions/0063）
+export const DOMAIN_MAPPINGS_API = `https://${REGION}-run.googleapis.com/apis/domains.cloudrun.com/v1/namespaces/${PROJECT_ID}/domainmappings`;
+
 export const envConfig = (env: EnvName): EnvConfig => ({
   env,
   service: `optionlist-${env}`,
@@ -88,7 +98,9 @@ export const envConfig = (env: EnvName): EnvConfig => ({
   bucket: `optionlist-${env}-photos`,
   database: `optionlist_${env}`,
   maxInstances: env === "production" ? 3 : 2,
-  origin: `https://optionlist-${env}-${PROJECT_NUMBER}.${REGION}.run.app`,
+  domain: domainOf(env),
+  origin: `https://${domainOf(env)}`,
+  runUrl: `https://optionlist-${env}-${PROJECT_NUMBER}.${REGION}.run.app`,
   serviceAccounts: {
     run: sa(`optionlist-${env}-run`),
     migrate: sa(`optionlist-${env}-migrate`),

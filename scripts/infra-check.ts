@@ -1,8 +1,13 @@
 // npm run infra:check -- <instance|staging|production>。環境の設定が決めたとおりかを gcloud・gh・DB・REST API（監視・予算）で読んで確かめる（process.md §5 の R8・R10c）
 // 違っているところを 1 行ずつ出し、1 つでもあれば終了コード 1。変えるのは infra/setup.ts（ここは読むだけ）
+import { resolve } from "node:dns/promises";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { backupBucketProblems, backupGrants, backupJobProblems, backupSchedulerProblems } from "./lib/backup-checks.ts";
+import { domainMappingProblems, expectedRecords } from "./lib/domain-checks.ts";
+import type { ResolvedRecords } from "./lib/domain-checks.ts";
+import { domainMappingUrl } from "../infra/domain.ts";
+import type { DomainMapping } from "../infra/domain.ts";
 import {
   ARTIFACT_REPOSITORY, BACKUP, ENV_NAMES, GITHUB, INSTANCE, PROJECT_ID, REGION, envConfig, passwordOf,
 } from "../infra/config.ts";
@@ -118,6 +123,30 @@ const checkMonitoring = async (env: EnvName): Promise<string[]> => {
   return problems;
 };
 
+// 独自ドメイン（docs/decisions/0063）: マッピング・証明書と、DNS が決めたレコードを返すか
+const resolveRecords = async (domain: string, types: string[]): Promise<ResolvedRecords> => {
+  const resolved: ResolvedRecords = new Map();
+  for (const type of types) {
+    try {
+      // 使う種類（A・AAAA・CNAME）はどれも文字列の配列を返す
+      resolved.set(type, (await resolve(domain, type)) as string[]);
+    } catch (error) {
+      // その種類のレコードがない・名前がないときだけ空にする（判定が「違う」と出す）。DNS に問い合わせられないなどは止める
+      const code = (error as { code?: string }).code;
+      if (code !== "ENODATA" && code !== "ENOTFOUND") throw error;
+      resolved.set(type, []);
+    }
+  }
+  return resolved;
+};
+const checkDomain = async (env: EnvName): Promise<string[]> => {
+  const result = await new GoogleApi(gcloud, PROJECT_ID, false).get<DomainMapping>(domainMappingUrl(env));
+  if (!result.ok && result.status !== 404) return [`ドメインマッピング ${envConfig(env).domain} を読めなかった（${result.status}）`];
+  const mapping = result.ok ? result.body : null;
+  const types = mapping === null ? [] : [...expectedRecords(mapping).keys()];
+  return domainMappingProblems(env, mapping, await resolveRecords(envConfig(env).domain, types));
+};
+
 const checkEnv = async (env: EnvName): Promise<string[]> => {
   const c = envConfig(env);
   const grants = expectedGrants(env);
@@ -143,6 +172,7 @@ const checkEnv = async (env: EnvName): Promise<string[]> => {
     ...providerProblems(readJson<Provider>(gcloud, ["iam", "workload-identity-pools", "providers", "describe", GITHUB.provider], { ...P, location: "global", "workload-identity-pool": GITHUB.pool })),
   ];
   if (env === "production") problems.push(...checkBackup(policy));
+  problems.push(...(await checkDomain(env)));
   problems.push(...(await checkMonitoring(env)));
   const github = readGithub();
   problems.push(...githubProblems(github.permissions, github.workflows));

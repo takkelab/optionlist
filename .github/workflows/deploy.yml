@@ -49,7 +49,7 @@ jobs:
       SERVICE: optionlist-staging
       MIGRATE_JOB: optionlist-staging-migrate
       CLEANUP_JOB: optionlist-staging-cleanup
-      ORIGIN: https://optionlist-staging-55327626788.asia-northeast1.run.app
+      ORIGIN: https://staging.optionlist.app
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
@@ -99,7 +99,7 @@ jobs:
       MIGRATE_JOB: optionlist-production-migrate
       CLEANUP_JOB: optionlist-production-cleanup
       BACKUP_JOB: optionlist-production-backup
-      ORIGIN: https://optionlist-production-55327626788.asia-northeast1.run.app
+      ORIGIN: https://optionlist.app
     steps:
       - uses: google-github-actions/auth@v2
         with:

@@ -87,9 +87,10 @@
 | [0054](0054-container-details.md) | 本番用のコンテナの細部（tsx で実行、FRONTEND_DIST、スモークテストの DB 接続、CI の image ジョブ） | 確定 |
 | [0055](0055-production-deploy-by-dispatch.md) | 本番へは、GitHub の承認ではなく、自分で手で起動するワークフローで出す | 確定 |
 | [0056](0056-env-login-roles.md) | 共用の Cloud SQL では、環境ごとのログイン用のロールを作り、ol_* はグループのロールにする | 確定 |
-| [0057](0057-environment-details.md) | 確認用・本番の環境の細部（独自ドメインは R11 で、マイグレーションの Job、ログの置き場所、infra のスクリプト） | 確定 |
+| [0057](0057-environment-details.md) | 確認用・本番の環境の細部（独自ドメインは R11 で、マイグレーションの Job、ログの置き場所、infra のスクリプト） | 一部置き換え（独自ドメインと `APP_ORIGIN` → 0063） |
 | [0058](0058-actual-cost.md) | 実際の請求は 1 日 60 円ほど（月 1,800〜2,000 円）で、ほぼ Cloud SQL の固定の料金。月 3,000 円の上限は変えない | 確定（使った分の料金は公開後に見直す） |
 | [0059](0059-cleanup-job-details.md) | 削除のジョブの細部（境目は期限ちょうどを残す、1 本の SQL で消して FOR UPDATE を使わない、Scheduler の名乗り、L5 の例外を cleanup.ts に絞る） | 確定 |
 | [0060](0060-usage-views-details.md) | R10 を 3 つに分け、利用状況のビューは「今日を含む直近の 7 日・28 日（日本時間の 0 時から）」で数え、確認用・本番は `metrics:usage -- --env` で見る | 確定 |
 | [0061](0061-backup-details.md) | バックアップの置き場所を東京に、書き出しは作るだけの権限で途中までのファイルを残さず、復旧の訓練は表ごとに S′ を見る | 確定 |
 | [0062](0062-monitoring-details.md) | 監視の細部（client_error はジョブでなく受け取るたびのログで数え、確認用は死活監視だけ、予算はクレジットを引く前の金額で見る） | 確定 |
+| [0063](0063-custom-domain.md) | 独自ドメインは `optionlist.app`（本番は apex、確認用は `staging.`）で、Cloud Run のドメインマッピング（東京）でつなぐ。DNS は Cloudflare でプロキシなし。R11 は 3 つに分ける | 確定 |

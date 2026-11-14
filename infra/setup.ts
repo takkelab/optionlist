@@ -5,6 +5,7 @@
 //   instance             共用の Cloud SQL のインスタンスと、管理用のユーザー（postgres）のパスワード
 //   shared               Artifact Registry、GitHub からの Workload Identity Federation、アクセスのログのバケット
 //   db <staging|production>   DB とロール（db:roles:cloud を Cloud SQL Auth Proxy 越しに流す）と、接続先の URL の秘密の値
+//   domain <staging|production>  独自ドメインのマッピング（Cloud Run）と、DNS に書くレコードの表示（docs/decisions/0063）
 //   env <staging|production>  サービスアカウント、写真の入れ物、秘密の値、Cloud Run のサービス・Job、Scheduler、権限、監視（本番は予算も）
 // 秘密の値は画面に出さない（Secret Manager には標準入力で渡す）
 import { randomBytes } from "node:crypto";
@@ -13,13 +14,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ARTIFACT_REPOSITORY, BACKUP, PHOTO_SOFT_DELETE_SECONDS, backupLifecycle, backupRunUri, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID,
+  ARTIFACT_REPOSITORY, BACKUP, DOMAIN_MAPPINGS_API, PHOTO_SOFT_DELETE_SECONDS, backupLifecycle, backupRunUri, CLEANUP_JOB_ARGS, CLEANUP_JOB_TIMEOUT_SECONDS, CLEANUP_SCHEDULE, ENV_NAMES, GITHUB, INSTANCE, INSTANCE_CONNECTION, LOG_BUCKET, PROJECT_ID,
   PROVIDER_CONDITION, PROVIDER_MAPPING, REGION, SERVICES, cleanupRunUri, deployPrincipal, envConfig, passwordOf, socketDatabaseUrl,
 } from "./config.ts";
 import type { EnvName } from "./config.ts";
 import { CliGcloud, readJson } from "./lib/gcloud.ts";
 import type { Gcloud } from "./lib/gcloud.ts";
 import { CloudSqlProxy, readSecret } from "./lib/cloud-sql.ts";
+import { domainMappingBody, domainMappingUrl, recordLines } from "./domain.ts";
+import type { DomainMapping } from "./domain.ts";
 import { GoogleApi, billingAccountOf, masked, operatorEmail } from "./lib/google-api.ts";
 import {
   BUDGETS_API, BUDGET_DISPLAY_NAME, CLIENT_ERROR_METRIC, LOGGING_API, MONITORING_API, MONITORING_ROOT, alertPolicies, budgetBody, channelBody, clientErrorMetricBody, uptimeBody, uptimeCheckId,
@@ -344,7 +347,25 @@ const monitoring = async (name: EnvName): Promise<void> => {
   };
 
   const channel = await upsert<Channel>(`${MONITORING_API}/notificationChannels`, "notificationChannels", channelBody(operatorEmail(gcloud)));
-  const uptime = await upsert<UptimeCheck>(`${MONITORING_API}/uptimeCheckConfigs`, "uptimeCheckConfigs", uptimeBody(name));
+  // 死活監視の host（monitoredResource）は PATCH で変えられず、アラートのポリシーが指している間は消せない。
+  // host が変わったら（独自ドメインに移ったときなど）新しく作り、ポリシーを新しい方に付け替えてから古い方を消す。
+  // 途中で落ちて同じ表示名が 2 つ残っても、流し直せば決めた host の方を使って続きから進む
+  const uptimes = `${MONITORING_API}/uptimeCheckConfigs`;
+  const wantUptime = uptimeBody(name);
+  const listedUptimes = await api.list<UptimeCheck>(uptimes, "uptimeCheckConfigs");
+  if (listedUptimes === null) throw new Error(`${masked(uptimes)} を読めなかった`);
+  const sameName = listedUptimes.filter((u) => u.displayName === wantUptime.displayName);
+  const isWantedHost = (u: UptimeCheck): boolean => u.monitoredResource?.labels?.host === wantUptime.monitoredResource?.labels?.host;
+  const fresh = sameName.filter(isWantedHost);
+  const stale = sameName.filter((u) => !isWantedHost(u));
+  if (fresh.length > 1) throw new Error(`死活監視「${wantUptime.displayName}」で host が同じものが ${fresh.length} 個ある（アラートのポリシーが指していない方を消す）`);
+  let uptime: string;
+  if (fresh[0]?.name !== undefined) {
+    await api.change("PATCH", `${MONITORING_ROOT}/${fresh[0].name}`, wantUptime);
+    uptime = fresh[0].name;
+  } else {
+    uptime = (await api.change<UptimeCheck>("POST", uptimes, wantUptime))?.name ?? "（dry-run）";
+  }
 
   if (name === "production") {
     // ログの指標は名前で決まる（表示名がない）
@@ -357,6 +378,8 @@ const monitoring = async (name: EnvName): Promise<void> => {
   for (const policy of alertPolicies(name, channel, uptimeCheckId(uptime))) {
     await upsert<AlertPolicy>(`${MONITORING_API}/alertPolicies`, "alertPolicies", policy);
   }
+  // ポリシーが新しい方を指したので、古い host の方を消せる
+  for (const old of stale) if (old.name !== undefined) await api.change("DELETE", `${MONITORING_ROOT}/${old.name}`, undefined);
 
   if (name === "production") {
     const budgets = `${BUDGETS_API}/${billingAccountOf(gcloud, PROJECT_ID)}/budgets`;
@@ -369,16 +392,46 @@ const monitoring = async (name: EnvName): Promise<void> => {
   }
 };
 
+// 独自ドメイン（docs/decisions/0063）: Cloud Run のドメインマッピングを作り、DNS（Cloudflare）に書くレコードを出す。
+// 作り直すときの順番: ドメインの所有の確認（gcloud domains verify）→ domain → Cloudflare に DNS（プロキシはオフ）→ 証明書を待つ → env。
+// config.ts の origin はもう独自ドメインなので、証明書より前に env を流すと、APP_ORIGIN と死活監視がまだ通らない URL を向く
+const domain = async (name: EnvName): Promise<void> => {
+  const api = new GoogleApi(gcloud, PROJECT_ID, dryRun);
+  const current = await api.get<DomainMapping>(domainMappingUrl(name));
+  if (current.ok) {
+    const route = current.body.spec?.routeName;
+    // 別のサービスを指しているなら、黙って付け替えない（手で消してから流し直す）
+    if (route !== envConfig(name).service) throw new Error(`${envConfig(name).domain} のマッピングが ${route ?? "（なし）"} を指している（${envConfig(name).service} にする）`);
+  } else if (current.status === 404) {
+    await api.change("POST", DOMAIN_MAPPINGS_API, domainMappingBody(name));
+  } else {
+    throw new Error(`${envConfig(name).domain} のマッピングを読めなかった（${current.status}）: ${current.message}`);
+  }
+  if (dryRun) return;
+  // レコードは作った直後には出ないことがあるので、少し待って読み直す
+  for (let i = 0; i < 10; i++) {
+    const mapping = await api.get<DomainMapping>(domainMappingUrl(name));
+    const lines = mapping.ok ? recordLines(mapping.body) : [];
+    if (lines.length > 0) {
+      console.log(`Cloudflare に書くレコード（プロキシはオフ〈DNS only〉にする）:\n${lines.join("\n")}`);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  console.log("レコードがまだ出ていない。少し待って、もう一度流す");
+};
+
 try {
   if (step === "apis") apis();
   else if (step === "instance") instance();
   else if (step === "shared") shared();
   else if (step === "db") await db(envName());
+  else if (step === "domain") await domain(envName());
   else if (step === "env") {
     env(envName());
     await monitoring(envName());
   }
-  else throw new Error("使い方: npm run infra:setup -- <apis|instance|shared|db <env>|env <env>> [--dry-run]");
+  else throw new Error("使い方: npm run infra:setup -- <apis|instance|shared|db <env>|domain <env>|env <env>> [--dry-run]");
   console.log(dryRun ? "（--dry-run。何も変えていない）" : `✅ ${step}${envArg === undefined ? "" : ` ${envArg}`}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

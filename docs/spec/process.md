@@ -62,7 +62,7 @@ AI が何かに詰まり、力ずくで解決したときは「解決したか�
 
 ## 5. リリースの実装の順番
 一般向けに公開するための順番（docs/decisions/0032〜0046）。§1 の進め方（1 ステップ ＝ 1 ブランチ ＝ 1 PR、Plan Mode、reviewer、`npm run pr:merge`、使用量の記録）はそのまま使う。
-各ステップの「完了の条件」はコマンドで確かめられる形で書く。PR 本文に、そのコマンドと結果（終了コード・件数）を貼る。`<確認用のドメイン>`・`<本番のドメイン>` は、独自ドメインをつなぐまで（R11。docs/decisions/0057）は Cloud Run の URL（`optionlist-staging-55327626788.asia-northeast1.run.app`・`optionlist-production-55327626788.asia-northeast1.run.app`）に置き換える。
+各ステップの「完了の条件」はコマンドで確かめられる形で書く。PR 本文に、そのコマンドと結果（終了コード・件数）を貼る。`<確認用のドメイン>`・`<本番のドメイン>` は `staging.optionlist.app`・`optionlist.app`（R11a でつないだ。docs/decisions/0063）。R11a より前の PR では Cloud Run の URL（`optionlist-<env>-55327626788.asia-northeast1.run.app`）だった。
 
 ### 共通の完了の条件（どのステップでも）
 ```sh
@@ -195,16 +195,33 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - 確認用で、わざと `/api/health` を失敗させてアラートのメールが届くことを確かめる（PR 本文に書く）
 
 ### R11. 公開（docs/decisions/0045）
-- 1 段目より前に、独自ドメインを決めてつなぐ（docs/decisions/0057。Cookie とホーム画面のアプリはオリジンごとなので、自分のデータを作り始める前に URL を決める）。Cloud Run のドメインマッピングが asia-northeast1 で使えなければ、代わりの方法を新しい記録で決める（SPEC.md §3）。`APP_ORIGIN` を独自ドメインに変え（`infra/config.ts` の `origin`）、`infra:check` で確かめる
-- `docs/ops/launch-checklist.md` に、自分だけの 2 週間・知人数人・一般公開のそれぞれの確認の項目を `- [ ]` で書き、終わったものを `- [x]` にする
-- 1 段目（自分だけの 2 週間）の間に、本番で最初の復旧の訓練（`npm run ops:restore-drill -- production`）を行う（data.md §6）
+0045 の 3 段階は数週間かかるので、3 つに分ける（docs/decisions/0063）。この順に進める。確認の項目は `docs/ops/launch-checklist.md` に `- [ ]` で書いてあり、終わったものを `- [x]` にする。
+
+#### R11a. 独自ドメイン
+- `optionlist.app`（本番）・`staging.optionlist.app`（確認用）を Cloud Run のドメインマッピングでつなぐ（`npm run infra:setup -- domain <env>`。DNS は Cloudflare でプロキシなし）。Cookie とホーム画面のアプリはオリジンごとなので、自分のデータを作り始める 1 段目より前にする。`APP_ORIGIN` を独自ドメインに変え（`infra/config.ts` の `origin`）、`deploy.yml` の `ORIGIN` も変える
+- `docs/ops/launch-checklist.md` を作る
+- 完了の条件
+  - 共通の条件
+  - `curl -fsS https://<確認用のドメイン>/api/health` と `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`
+  - `curl -sI https://<本番のドメイン>/ | grep -i "content-security-policy"` が 1 行出る
+  - `npm run infra:check -- staging`・`production` が終了コード 0（マッピングの向き先と証明書、DNS が決めたレコードを返す、`APP_ORIGIN`、死活監視の host）
+  - 確認用の独自ドメインで、手で 1 件追加できる（PR 本文に書く）
+  - `launch-checklist.md` の「0. 準備」がすべて `- [x]`
+
+#### R11b. 自分だけの 2 週間（1 段目）
+- 本番を自分の日常で 2 週間使い、削除のジョブ・書き出し・アラートが本番で動いたことを確かめる
+- この間に、本番で最初の復旧の訓練（`npm run ops:restore-drill -- production`）を行う（data.md §6）
+- 完了の条件
+  - 共通の条件
+  - `launch-checklist.md` の「1. 自分だけ」がすべて `- [x]`
+  - `docs/ops/restore-drills.md` の表に、本番の訓練の成功の行が 1 行以上ある（`grep -c "| optionlist_production |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上。R10 の行は `optionlist_staging` なので数えられない）
+
+#### R11c. 知人数人・一般公開（2・3 段目）
 - 実機での結果（iPhone のホーム画面に追加したときに同じアカウントか）を書き、違ったら screens.md §9 と docs/decisions/ を直す
 - プライバシーポリシー・利用規約の文面を確定し、`PUBLIC_INDEXING=true` にして `noindex` を外す
 - 完了の条件
   - 共通の条件
   - `grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0（終わっていない項目がない）
-  - `docs/ops/restore-drills.md` の表に、本番の訓練の成功の行が 1 行以上ある（`grep -c "| optionlist_production |.*| 成功 |" docs/ops/restore-drills.md` が 1 以上。R10 の行は `optionlist_staging` なので数えられない）
-  - 独自ドメインで `curl -fsS https://<本番のドメイン>/api/health` が `{"status":"ok"}`（ここからは `<本番のドメイン>` は独自ドメイン）
   - `curl -sI https://<本番のドメイン>/ | grep -ci "x-robots-tag"` が 0、`curl -s https://<本番のドメイン>/ | grep -c noindex` が 0
   - `npm run infra:check -- production` が終了コード 0
   - `git grep -n "example.invalid" -- frontend/src` が 0 件（ポリシーの仮の問い合わせ先を、専用のアドレスに差し替えた。docs/decisions/0052）
