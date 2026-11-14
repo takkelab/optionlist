@@ -42,7 +42,7 @@ jobs:
       # GcsPhotoFiles のテストがつなぐ fake-gcs-server（下の Start fake-gcs-server。CI では GCS のテストを飛ばさない。docs/decisions/0051）
       GCS_EMULATOR_URL: http://localhost:4443
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -119,7 +119,7 @@ jobs:
       APP_DATABASE_URL: postgres://ol_app:ol_app@127.0.0.1:5432/optionlist_test?sslmode=disable
       CLEANUP_DATABASE_URL: postgres://ol_cleanup:ol_cleanup@127.0.0.1:5432/optionlist_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
