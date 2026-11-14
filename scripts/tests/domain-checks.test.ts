@@ -59,6 +59,18 @@ describe("domainMappingProblems", () => {
     assert.match(problems.join("\n"), /プロキシはオフ/);
   });
 
+  it("確認用の CNAME が引けない（プロキシがオンなど）なら不合格", () => {
+    const cname = mapping("staging", { conditions: ready, resourceRecords: [{ name: "staging", type: "CNAME", rrdata: "ghs.googlehosted.com." }] });
+    assert.match(domainMappingProblems("staging", cname, new Map([["CNAME", []]])).join("\n"), /CNAME が違う.*（なし）/);
+  });
+
+  it("証明書が自動でない・条件がまだないなら不合格", () => {
+    const manual: DomainMapping = { ...mapping("production", { resourceRecords: apexRecords }), spec: { routeName: "optionlist-production", certificateMode: "NONE" } };
+    const problems = domainMappingProblems("production", manual, apexDns);
+    assert.match(problems.join("\n"), /自動（AUTOMATIC）でない/);
+    assert.equal(problems.filter((p) => p.includes("まだない")).length, 3);
+  });
+
   it("レコードをまだ出していなければ不合格", () => {
     assert.match(domainMappingProblems("production", mapping("production", { conditions: ready }), apexDns).join("\n"), /レコードを出していない/);
   });

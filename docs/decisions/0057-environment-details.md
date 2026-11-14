@@ -1,7 +1,7 @@
 # 0057 確認用・本番の環境の細部（独自ドメインは R11 で、マイグレーションの Job、ログの置き場所、infra のスクリプト）
 
 - 日付: 2026-11-09
-- 状態: 確定
+- 状態: 一部置き換え（独自ドメインと `APP_ORIGIN` → 0063。確認用・本番は Cloud Run の URL ではなく `staging.optionlist.app`・`optionlist.app`）
 - 対象: SPEC.md §3、architecture.md §4、data.md §4、process.md §5 の R8・R11
 
 ## 決めたこと

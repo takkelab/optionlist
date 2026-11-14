@@ -348,15 +348,21 @@ const monitoring = async (name: EnvName): Promise<void> => {
 
   const channel = await upsert<Channel>(`${MONITORING_API}/notificationChannels`, "notificationChannels", channelBody(operatorEmail(gcloud)));
   // 死活監視の host（monitoredResource）は PATCH で変えられず、アラートのポリシーが指している間は消せない。
-  // host が変わったら（独自ドメインに移ったときなど）新しく作り、ポリシーを新しい方に付け替えてから古い方を消す
+  // host が変わったら（独自ドメインに移ったときなど）新しく作り、ポリシーを新しい方に付け替えてから古い方を消す。
+  // 途中で落ちて同じ表示名が 2 つ残っても、流し直せば決めた host の方を使って続きから進む
   const uptimes = `${MONITORING_API}/uptimeCheckConfigs`;
   const wantUptime = uptimeBody(name);
-  const currentUptime = await byName<UptimeCheck>(uptimes, "uptimeCheckConfigs", wantUptime.displayName ?? "");
-  const hostChanged = currentUptime !== undefined && currentUptime.monitoredResource?.labels?.host !== wantUptime.monitoredResource?.labels?.host;
+  const listedUptimes = await api.list<UptimeCheck>(uptimes, "uptimeCheckConfigs");
+  if (listedUptimes === null) throw new Error(`${masked(uptimes)} を読めなかった`);
+  const sameName = listedUptimes.filter((u) => u.displayName === wantUptime.displayName);
+  const isWantedHost = (u: UptimeCheck): boolean => u.monitoredResource?.labels?.host === wantUptime.monitoredResource?.labels?.host;
+  const fresh = sameName.filter(isWantedHost);
+  const stale = sameName.filter((u) => !isWantedHost(u));
+  if (fresh.length > 1) throw new Error(`死活監視「${wantUptime.displayName}」で host が同じものが ${fresh.length} 個ある（アラートのポリシーが指していない方を消す）`);
   let uptime: string;
-  if (currentUptime?.name !== undefined && !hostChanged) {
-    await api.change("PATCH", `${MONITORING_ROOT}/${currentUptime.name}`, wantUptime);
-    uptime = currentUptime.name;
+  if (fresh[0]?.name !== undefined) {
+    await api.change("PATCH", `${MONITORING_ROOT}/${fresh[0].name}`, wantUptime);
+    uptime = fresh[0].name;
   } else {
     uptime = (await api.change<UptimeCheck>("POST", uptimes, wantUptime))?.name ?? "（dry-run）";
   }
@@ -372,7 +378,8 @@ const monitoring = async (name: EnvName): Promise<void> => {
   for (const policy of alertPolicies(name, channel, uptimeCheckId(uptime))) {
     await upsert<AlertPolicy>(`${MONITORING_API}/alertPolicies`, "alertPolicies", policy);
   }
-  if (hostChanged && currentUptime?.name !== undefined) await api.change("DELETE", `${MONITORING_ROOT}/${currentUptime.name}`, undefined);
+  // ポリシーが新しい方を指したので、古い host の方を消せる
+  for (const old of stale) if (old.name !== undefined) await api.change("DELETE", `${MONITORING_ROOT}/${old.name}`, undefined);
 
   if (name === "production") {
     const budgets = `${BUDGETS_API}/${billingAccountOf(gcloud, PROJECT_ID)}/budgets`;
@@ -386,7 +393,8 @@ const monitoring = async (name: EnvName): Promise<void> => {
 };
 
 // 独自ドメイン（docs/decisions/0063）: Cloud Run のドメインマッピングを作り、DNS（Cloudflare）に書くレコードを出す。
-// ドメインの所有の確認（gcloud domains verify）は先に済ませておく。証明書が出たら env で APP_ORIGIN を独自ドメインにする
+// 作り直すときの順番: ドメインの所有の確認（gcloud domains verify）→ domain → Cloudflare に DNS（プロキシはオフ）→ 証明書を待つ → env。
+// config.ts の origin はもう独自ドメインなので、証明書より前に env を流すと、APP_ORIGIN と死活監視がまだ通らない URL を向く
 const domain = async (name: EnvName): Promise<void> => {
   const api = new GoogleApi(gcloud, PROJECT_ID, dryRun);
   const current = await api.get<DomainMapping>(domainMappingUrl(name));

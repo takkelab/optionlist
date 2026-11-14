@@ -13,6 +13,8 @@
 - 死活監視は `origin` の host を見る。host は PATCH で変えられず、アラートのポリシーが指している間は消せないので、`infra:setup` は新しく作り、ポリシーを付け替えてから古い方を消す
 - R11 は 3 つの PR に分ける: R11a（ドメインをつなぐ・`docs/ops/launch-checklist.md`）、R11b（1 段目: 自分だけの 2 週間・本番の復旧の訓練）、R11c（2・3 段目: 実機の確認・文面の確定・noindex を外す）
 
+- 作り直すときの順番: `gcloud domains verify optionlist.app`（所有の確認。Search Console の TXT を Cloudflare に書く）→ `infra:setup -- domain <env>` → 表示されたレコードを Cloudflare に書く → 証明書を待つ（`infra:check` の `CertificateProvisioned`）→ `infra:setup -- env <env>`。`origin` はもう独自ドメインなので、証明書より前に `env` を流すと `APP_ORIGIN` と死活監視がまだ通らない URL を向く
+
 ## 理由
 - `.com` は取れなかった。`.app` は HSTS のプリロードのドメインで HTTPS しか使えず、もとから HTTPS だけのこのアプリに合う
 - 確認用もサブドメインにして、ドメインマッピング・証明書・Origin の確認を本番と同じ形で先に試せるようにした。Cookie は `__Host-` で、ホストごとになるので、確認用と本番は混ざらない
