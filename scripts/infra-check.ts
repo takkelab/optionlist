@@ -1,4 +1,4 @@
-// npm run infra:check -- <instance|staging|production>。環境の設定が決めたとおりかを gcloud・gh・DB で読んで確かめる（process.md §5 の R8）
+// npm run infra:check -- <instance|staging|production>。環境の設定が決めたとおりかを gcloud・gh・DB・REST API（監視・予算）で読んで確かめる（process.md §5 の R8・R10c）
 // 違っているところを 1 行ずつ出し、1 つでもあれば終了コード 1。変えるのは infra/setup.ts（ここは読むだけ）
 import { readFileSync } from "node:fs";
 import pg from "pg";
@@ -9,6 +9,10 @@ import {
 import type { EnvName } from "../infra/config.ts";
 import { CloudSqlProxy, readSecret } from "../infra/lib/cloud-sql.ts";
 import { CliGcloud, readJson } from "../infra/lib/gcloud.ts";
+import { GoogleApi, billingAccountOf, operatorEmail } from "../infra/lib/google-api.ts";
+import { BUDGETS_API, CLIENT_ERROR_METRIC, LOGGING_API, MONITORING_API } from "../infra/monitoring.ts";
+import type { AlertPolicy, Budget, Channel, LogMetric, UptimeCheck } from "../infra/monitoring.ts";
+import { alertPolicyProblems, budgetProblems, channelProblems, logMetricProblems, uptimeProblems } from "./lib/monitoring-checks.ts";
 import {
   bucketProblems, cleanupJobProblems, databaseProblems, expectedGrants, githubProblems, instanceProblems, isProjectConvenience, jobProblems, logSinkProblems,
   policyProblems, projectPolicyProblems, providerProblems, schedulerProblems, secretLocationProblems, serviceProblems,
@@ -95,6 +99,25 @@ const checkBackup = (policy: (args: string[], flags: Record<string, string>) => 
   ];
 };
 
+// 監視（metrics.md §8。docs/decisions/0062）: 通知先・死活監視・アラートのポリシー。本番はログの指標と予算も
+const checkMonitoring = async (env: EnvName): Promise<string[]> => {
+  const api = new GoogleApi(gcloud, PROJECT_ID, false);
+  const list = <T>(url: string, key: string): Promise<T[] | null> => api.list<T>(url, key);
+  const channel = channelProblems(await list<Channel>(`${MONITORING_API}/notificationChannels`, "notificationChannels"), operatorEmail(gcloud));
+  const uptime = uptimeProblems(env, await list<UptimeCheck>(`${MONITORING_API}/uptimeCheckConfigs`, "uptimeCheckConfigs"));
+  const problems = [
+    ...channel.problems,
+    ...uptime.problems,
+    ...alertPolicyProblems(env, await list<AlertPolicy>(`${MONITORING_API}/alertPolicies`, "alertPolicies"), channel.channel, uptime.checkId),
+  ];
+  if (env === "production") {
+    const metric = await api.get<LogMetric>(`${LOGGING_API}/metrics/${CLIENT_ERROR_METRIC}`);
+    problems.push(...logMetricProblems(metric.ok ? metric.body : null));
+    problems.push(...budgetProblems(await list<Budget>(`${BUDGETS_API}/${billingAccountOf(gcloud, PROJECT_ID)}/budgets`, "budgets"), channel.channel));
+  }
+  return problems;
+};
+
 const checkEnv = async (env: EnvName): Promise<string[]> => {
   const c = envConfig(env);
   const grants = expectedGrants(env);
@@ -120,6 +143,7 @@ const checkEnv = async (env: EnvName): Promise<string[]> => {
     ...providerProblems(readJson<Provider>(gcloud, ["iam", "workload-identity-pools", "providers", "describe", GITHUB.provider], { ...P, location: "global", "workload-identity-pool": GITHUB.pool })),
   ];
   if (env === "production") problems.push(...checkBackup(policy));
+  problems.push(...(await checkMonitoring(env)));
   const github = readGithub();
   problems.push(...githubProblems(github.permissions, github.workflows));
   problems.push(...(await readDatabase(env).then((facts) => databaseProblems(env, facts), (error: unknown) => [`${c.database}: 読めなかった（${error instanceof Error ? error.message : String(error)}）`])));

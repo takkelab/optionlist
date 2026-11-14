@@ -19,7 +19,8 @@ export type LogKind =
   | "cleanup_result"
   | "cleanup_failed"
   | "backup_result"
-  | "backup_failed";
+  | "backup_failed"
+  | "client_error_received";
 
 // 1 行に出すもの。ここにないキーは出さない（Cookie・復旧コード・タイトル・写真の名前をうっかり載せないため）
 export type LogEntry = {

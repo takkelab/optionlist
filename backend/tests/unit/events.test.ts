@@ -4,6 +4,7 @@ import { EventsController } from "../../src/controllers/EventsController";
 import { EventService } from "../../src/services/EventService";
 import { AppError } from "../../src/services/errors";
 import { FakeEventStore } from "../fakes/FakeEventStore";
+import { FakeLogger } from "../fakes/FakeLogger";
 import { FixedClock } from "../fakes/FakeOptionStore";
 import { FakeResponse } from "../fakes/FakeResponse";
 
@@ -14,10 +15,12 @@ const ERROR = { type: "client_error", payload: { message: "boom", route: "/" }, 
 describe("EventsController and EventInput", () => {
   let store: FakeEventStore;
   let controller: EventsController;
+  let logger: FakeLogger;
 
   beforeEach(() => {
     store = new FakeEventStore();
-    controller = new EventsController(new EventInput(), new EventService(store, new FixedClock(T0)));
+    logger = new FakeLogger();
+    controller = new EventsController(new EventInput(), new EventService(store, new FixedClock(T0), logger));
   });
 
   it("saves the events with the time they arrived and answers 202 without a body", async () => {
@@ -29,6 +32,18 @@ describe("EventsController and EventInput", () => {
       { type: "client_error", payload: { message: "boom", route: "/" }, occurredAt: new Date("2026-11-08T00:59:00.000Z"), receivedAt: new Date(T0) },
       { type: "client_error", payload: { message: "boom", route: "/" }, occurredAt: new Date("2026-11-08T00:59:00.000Z"), receivedAt: new Date(T0) },
     ]);
+  });
+
+  // Cloud Monitoring が 1 時間の合計でアラートにする（metrics.md §8）。件数だけを出し、メッセージ・画面は出さない
+  it("logs only the number of client_error events it saved", async () => {
+    await controller.create({ events: [ERROR, ERROR, ERROR] }, new FakeResponse());
+    expect(logger.infos()).toEqual([{ kind: "client_error_received", message: "client_error を受け取った", counts: { clientErrors: 3 } }]);
+    expect(JSON.stringify(logger.infos())).not.toContain("boom");
+  });
+
+  it("logs nothing when the events are rejected", async () => {
+    await expect(controller.create({ events: [] }, new FakeResponse())).rejects.toBeInstanceOf(AppError);
+    expect(logger.infos()).toEqual([]);
   });
 
   it("accepts 50 events and a payload of exactly 2048 bytes", async () => {
