@@ -188,7 +188,7 @@ npm run typecheck && npm run lint && npm run test:lint-rules && npm test \
   - 訓練のあと `gcloud sql instances list --filter="name:restore-drill-*" --format="value(name)"` が何も出さない（一時的なインスタンス〈`restore-drill-<日時>`。data.md §6〉を消した）
 
 #### R10c. 監視
-- アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）
+- アラート（死活監視、5xx、`unhandled_error`・`orphan_file_error`、`client_error` の件数、ジョブの失敗と止まり、予算）とメールの通知先（metrics.md §8）。`client_error` は backend が受け取るたびに件数をログに出して数え、確認用は死活監視だけ（docs/decisions/0062）
 - 完了の条件
   - 共通の条件
   - `npm run infra:check -- production` が、アラートのポリシーと死活監視・予算のアラートも確かめて終了コード 0

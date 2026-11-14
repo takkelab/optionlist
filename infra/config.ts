@@ -170,4 +170,7 @@ export const SERVICES = [
   "cloudresourcemanager.googleapis.com",
   "logging.googleapis.com",
   "cloudscheduler.googleapis.com",
+  // 監視と予算（docs/decisions/0062）
+  "monitoring.googleapis.com",
+  "billingbudgets.googleapis.com",
 ] as const;

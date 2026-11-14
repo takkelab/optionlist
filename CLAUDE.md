@@ -54,4 +54,6 @@
 - Service Worker（PWA）は `npm run dev` では出ない。確かめるのは `npm --prefix frontend run build` → `npm --prefix frontend run preview`。E2E は設定で Service Worker を止めていて、確かめるのは `pwa.spec` だけ（docs/decisions/0052）
 - `frontend/public/favicon.svg` から、ビルドのときにアイコンの PNG を作る。SVG のコメントに `--` を書くと XML として壊れ、ビルドが「Input buffer has corrupt header」で落ちる
 - iPhone の Safari でだけ起きる見た目の不具合は、E2E（Chromium）でも手元の Playwright の WebKit（Windows 版）でも再現しないことがある。推測で直す前に、一時的なコードで要素の大きさ・位置（`getBoundingClientRect`・`getComputedStyle`）を `/api/events` に `client_error` として送り、`backend/.env` の DB の events で読む（終わったらコードとその行を消す）。高さの決まっていない親の中で `height: 100%` や `flex: 1`（元の高さ 0%）を使わない。iOS 26 の Safari は 0 と扱い、シートが 16px につぶれた（docs/harness/incidents.md #24）
+- Google Cloud の API の振る舞いを試すときは、本物のリソース（予算・アラートのポリシーなど）に curl で書き込まない。`infra/` を直して `infra:setup` で流すか、試し用の名前のリソースを作って消す。日本語を含む本文は curl の `--data "$変数"` で送らない（Git Bash で文字化けする。送るならファイルに Write ツールで書いて `--data-binary @file`。docs/harness/incidents.md #25）
+- 監視（アラート・死活監視・予算）は `infra/monitoring.ts` に定義し、`infra:setup -- env <env>` が REST API で作る。通知先のメールアドレスと請求先アカウントの ID はリポジトリに書かない（gcloud のログイン中のアカウントから読む。docs/decisions/0062）
 - ファイルの書き換えは Edit・Write ツールで行う。シェル経由（`node -e` など）で書くと `\` が消えることがあり、`node -e` は禁止している（docs/harness/incidents.md #8）

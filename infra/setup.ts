@@ -5,7 +5,7 @@
 //   instance             共用の Cloud SQL のインスタンスと、管理用のユーザー（postgres）のパスワード
 //   shared               Artifact Registry、GitHub からの Workload Identity Federation、アクセスのログのバケット
 //   db <staging|production>   DB とロール（db:roles:cloud を Cloud SQL Auth Proxy 越しに流す）と、接続先の URL の秘密の値
-//   env <staging|production>  サービスアカウント、写真の入れ物、秘密の値、Cloud Run のサービス・Job、Scheduler、権限
+//   env <staging|production>  サービスアカウント、写真の入れ物、秘密の値、Cloud Run のサービス・Job、Scheduler、権限、監視（本番は予算も）
 // 秘密の値は画面に出さない（Secret Manager には標準入力で渡す）
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -20,6 +20,11 @@ import type { EnvName } from "./config.ts";
 import { CliGcloud, readJson } from "./lib/gcloud.ts";
 import type { Gcloud } from "./lib/gcloud.ts";
 import { CloudSqlProxy, readSecret } from "./lib/cloud-sql.ts";
+import { GoogleApi, billingAccountOf, masked, operatorEmail } from "./lib/google-api.ts";
+import {
+  BUDGETS_API, BUDGET_DISPLAY_NAME, CLIENT_ERROR_METRIC, LOGGING_API, MONITORING_API, MONITORING_ROOT, alertPolicies, budgetBody, channelBody, clientErrorMetricBody, uptimeBody, uptimeCheckId,
+} from "./monitoring.ts";
+import type { AlertPolicy, Budget, Channel, LogMetric, UptimeCheck } from "./monitoring.ts";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -316,12 +321,63 @@ const backup = (): void => {
   gcloud.change(["iam", "service-accounts", "add-iam-policy-binding", backupSa], { ...P, member: `serviceAccount:${c.serviceAccounts.deploy}`, role: "roles/iam.serviceAccountUser" });
 };
 
+// 監視（metrics.md §8。docs/decisions/0062）: 通知先・死活監視・アラートのポリシー。本番はあわせてログの指標と予算
+// どれも表示名で探し、あれば決めた形で置き換え、なければ作る
+const monitoring = async (name: EnvName): Promise<void> => {
+  const api = new GoogleApi(gcloud, PROJECT_ID, dryRun);
+  const byName = async <T extends { displayName?: string }>(url: string, key: string, displayName: string): Promise<T | undefined> => {
+    const listed = await api.list<T>(url, key);
+    if (listed === null) throw new Error(`${masked(url)} を読めなかった`);
+    const found = listed.filter((item) => item.displayName === displayName);
+    if (found.length > 1) throw new Error(`表示名が「${displayName}」のものが ${found.length} 個ある（1 つを残して消す）`);
+    return found[0];
+  };
+  const upsert = async <T extends { name?: string; displayName?: string }>(collection: string, key: string, body: T): Promise<string> => {
+    const current = await byName<T>(collection, key, body.displayName ?? "");
+    if (current?.name !== undefined) {
+      await api.change("PATCH", `${MONITORING_ROOT}/${current.name}`, body);
+      return current.name;
+    }
+    const created = await api.change<T>("POST", collection, body);
+    // --dry-run では作らないので、名前は仮のもの
+    return created?.name ?? "（dry-run）";
+  };
+
+  const channel = await upsert<Channel>(`${MONITORING_API}/notificationChannels`, "notificationChannels", channelBody(operatorEmail(gcloud)));
+  const uptime = await upsert<UptimeCheck>(`${MONITORING_API}/uptimeCheckConfigs`, "uptimeCheckConfigs", uptimeBody(name));
+
+  if (name === "production") {
+    // ログの指標は名前で決まる（表示名がない）
+    const metricUrl = `${LOGGING_API}/metrics/${CLIENT_ERROR_METRIC}`;
+    const metric = await api.get<LogMetric>(metricUrl);
+    if (metric.ok) await api.change("PUT", metricUrl, clientErrorMetricBody());
+    else await api.change("POST", `${LOGGING_API}/metrics`, clientErrorMetricBody());
+  }
+
+  for (const policy of alertPolicies(name, channel, uptimeCheckId(uptime))) {
+    await upsert<AlertPolicy>(`${MONITORING_API}/alertPolicies`, "alertPolicies", policy);
+  }
+
+  if (name === "production") {
+    const budgets = `${BUDGETS_API}/${billingAccountOf(gcloud, PROJECT_ID)}/budgets`;
+    const current = await byName<Budget>(budgets, "budgets", BUDGET_DISPLAY_NAME);
+    // 予算の API は updateMask がないと既定値でない項目しか変えない（既定値に戻せない）ので、決めた項目をすべて名指しする
+    // budgetFilter は丸ごとだと 400 になるので、中の項目を名指しする
+    const mask = "displayName,budgetFilter.projects,budgetFilter.creditTypesTreatment,budgetFilter.calendarPeriod,amount,thresholdRules,notificationsRule";
+    if (current?.name !== undefined) await api.change("PATCH", `${BUDGETS_API}/${current.name}?updateMask=${mask}`, budgetBody(channel));
+    else await api.change("POST", budgets, budgetBody(channel));
+  }
+};
+
 try {
   if (step === "apis") apis();
   else if (step === "instance") instance();
   else if (step === "shared") shared();
   else if (step === "db") await db(envName());
-  else if (step === "env") env(envName());
+  else if (step === "env") {
+    env(envName());
+    await monitoring(envName());
+  }
   else throw new Error("使い方: npm run infra:setup -- <apis|instance|shared|db <env>|env <env>> [--dry-run]");
   console.log(dryRun ? "（--dry-run。何も変えていない）" : `✅ ${step}${envArg === undefined ? "" : ` ${envArg}`}`);
 } catch (error) {

@@ -196,7 +196,7 @@ export class AppAssembly implements AppFactory {
       new SuggestionsController(new SuggestionService(new SuggestionRepository(this.#db, new SuggestionRowMapper())), ids, user),
       new AchievementsController(new OptionInput(ids), new AchievementService(achievementStore, this.#clock), user),
       new AchievementPhotoController(ids, photos, user),
-      new EventsController(new EventInput(), new EventService(new EventRepository(this.#db), this.#clock)),
+      new EventsController(new EventInput(), new EventService(new EventRepository(this.#db), this.#clock, this.#logger)),
       new AccountController({ input: new AccountInput(), accounts: this.#accountSettings(cleanup), user, cookie }),
     ];
   }
