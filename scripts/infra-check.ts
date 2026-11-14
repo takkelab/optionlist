@@ -130,7 +130,10 @@ const resolveRecords = async (domain: string, types: string[]): Promise<Resolved
     try {
       // 使う種類（A・AAAA・CNAME）はどれも文字列の配列を返す
       resolved.set(type, (await resolve(domain, type)) as string[]);
-    } catch {
+    } catch (error) {
+      // その種類のレコードがない・名前がないときだけ空にする（判定が「違う」と出す）。DNS に問い合わせられないなどは止める
+      const code = (error as { code?: string }).code;
+      if (code !== "ENODATA" && code !== "ENOTFOUND") throw error;
       resolved.set(type, []);
     }
   }
