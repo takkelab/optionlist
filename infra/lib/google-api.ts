@@ -40,10 +40,10 @@ export class GoogleApi {
 
   // 変える。何をするかを表示してから流し、失敗したら止まる。--dry-run なら表示だけ
   // 表示では、メールアドレスと請求先アカウントの ID を伏せる（dry-run の出力を PR などに貼っても漏れないように。docs/decisions/0062）
-  async change<T>(method: "POST" | "PATCH" | "PUT", url: string, body: unknown): Promise<T | null> {
+  async change<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", url: string, body: unknown): Promise<T | null> {
     console.log(`▶ ${method} ${masked(url)}`);
     if (this.#dryRun) {
-      console.log(masked(JSON.stringify(body, null, 2)));
+      if (body !== undefined) console.log(masked(JSON.stringify(body, null, 2)));
       return null;
     }
     const result = await this.#send<T>(method, url, body);

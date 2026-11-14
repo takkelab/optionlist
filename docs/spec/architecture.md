@@ -133,8 +133,8 @@ optionlist-web/
 |------|------------|----|------|--------|
 | 手元 | Windows（`npm run dev`） | Windows に直接入れた PostgreSQL 17 | `LocalPhotoFiles` | — |
 | CI | GitHub Actions | `postgres:17` のサービスコンテナ | `LocalPhotoFiles`（一時フォルダ）。`GcsPhotoFiles` のテストは fake-gcs-server | push・PR ごと |
-| 確認用 | Cloud Run `optionlist-staging`（最小 0 台・最大 2 台） | 共用の Cloud SQL の `optionlist_staging` | Cloud Storage `optionlist-staging-photos` | main に入ったら自動 |
-| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）。独自ドメインは R11 でつなぐ（それまでは Cloud Run の URL。docs/decisions/0057） | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | 自分が `deploy.yml` を手で起動したとき（`workflow_dispatch`。docs/decisions/0055） |
+| 確認用 | Cloud Run `optionlist-staging`（最小 0 台・最大 2 台）。`https://staging.optionlist.app`（ドメインマッピング。docs/decisions/0063） | 共用の Cloud SQL の `optionlist_staging` | Cloud Storage `optionlist-staging-photos` | main に入ったら自動 |
+| 本番 | Cloud Run `optionlist-production`（最小 0 台・最大 3 台）。`https://optionlist.app`（ドメインマッピング。DNS は Cloudflare でプロキシなし。docs/decisions/0063） | 共用の Cloud SQL の `optionlist_production` | Cloud Storage `optionlist-production-photos` | 自分が `deploy.yml` を手で起動したとき（`workflow_dispatch`。docs/decisions/0055） |
 
 - 地域はすべて `asia-northeast1`（東京）。API と DB を同じ地域に置く
 - 確認用と本番は、同じイメージ（同じダイジェスト）を出す。イメージは main に入ったときに 1 回だけ作り、Artifact Registry に置く
