@@ -3,9 +3,9 @@
 終わったものを `- [x]` にし、日付と結果（確かめたコマンドや、届いたメールの件名）を後ろに書く。R11 は、ここに `- [ ]` が残っていない（`grep -c -F -- "- [ ]" docs/ops/launch-checklist.md` が 0）ことで終わる。
 
 ## 0. 準備（R11a）
-- [ ] `https://staging.optionlist.app` と `https://optionlist.app` で `/api/health` が `{"status":"ok"}`（ドメインマッピングと証明書。docs/decisions/0063）
-- [ ] `npm run infra:check -- staging`・`production` が終了コード 0（マッピング・DNS・`APP_ORIGIN`・死活監視の host）
-- [ ] 確認用の独自ドメインで、手で 1 件追加できる（Origin の確認が通る）
+- [x] `https://staging.optionlist.app` と `https://optionlist.app` で `/api/health` が `{"status":"ok"}`（ドメインマッピングと証明書。docs/decisions/0063）— 2026-11-14。DNS を書いてから証明書が出るまで 1 時間ほど
+- [x] `npm run infra:check -- staging`・`production` が終了コード 0（マッピング・DNS・`APP_ORIGIN`・死活監視の host）— 2026-11-14
+- [x] 確認用の独自ドメインで、手で 1 件追加できる（Origin の確認が通る）— 2026-11-14。`Origin: https://staging.optionlist.app` で `POST /api/options` が 201、run.app の Origin では 403。試したアカウントは `DELETE /api/account`（204）で消した
 
 ## 1. 自分だけ（2 週間。R11b）
 - [ ] 本番の独自ドメインで、自分の日常で 2 週間使う（始めた日と終えた日を書く）
