@@ -25,7 +25,7 @@
     "test:perf": "npm run -s db:roles:test && npm run -s db:migrate:test && npm run -s db:perf-data && vitest run --config vitest.perf.config.ts"
   },
   "dependencies": {
-    "@google-cloud/storage": "^8.4.0",
+    "@google-cloud/storage": "^9.0.0",
     "express": "^5.3.0",
     "multer": "^2.5.0",
     "pg": "^8.23.1",
