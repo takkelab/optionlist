@@ -56,7 +56,7 @@ jobs:
         with:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: optionlist-staging-deploy@project-2465a1be-8ac7-4a7e-99a.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
       - name: Build and push the image
         run: |
           gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
@@ -105,7 +105,7 @@ jobs:
         with:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: optionlist-production-deploy@project-2465a1be-8ac7-4a7e-99a.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
       # 確認用でトラフィックを 100% 受けているリビジョンがちょうど 1 つでなければ止まる
       - name: Read the image serving 100% on staging
         run: |
